@@ -105,31 +105,15 @@ func (s *Syncer) SyncAll() ([]models.SyncResult, error) {
 		results = append(results, result)
 	}
 
-	if s.cfg.Sync.OnDelete == "delete" {
-		githubRepoNames := make(map[string]bool)
-		for _, r := range githubRepos {
-			githubRepoNames[r.Name] = true
-		}
+	githubRepoNames := make(map[string]bool)
+	for _, r := range githubRepos {
+		githubRepoNames[r.Name] = true
+	}
 
-		for _, gvRepo := range gitverseRepos {
-			if !githubRepoNames[gvRepo.Name] {
-				s.logger.Info("deleting repository not found on GitHub",
-					"repo", gvRepo.Name)
-				if err := s.gvClient.DeleteRepository(s.gitverseUser, gvRepo.Name); err != nil {
-					results = append(results, models.SyncResult{
-						RepoName: gvRepo.Name,
-						Action:   models.ActionDelete,
-						Error:    err,
-						Message:  "failed to delete",
-					})
-				} else {
-					results = append(results, models.SyncResult{
-						RepoName: gvRepo.Name,
-						Action:   models.ActionDelete,
-						Message:  "deleted successfully",
-					})
-				}
-			}
+	var extraOnGitVerse []string
+	for _, gvRepo := range gitverseRepos {
+		if !githubRepoNames[gvRepo.Name] {
+			extraOnGitVerse = append(extraOnGitVerse, gvRepo.Name)
 		}
 	}
 
@@ -137,9 +121,15 @@ func (s *Syncer) SyncAll() ([]models.SyncResult, error) {
 		"total", len(results),
 		"created", countActions(results, models.ActionCreate),
 		"updated", countActions(results, models.ActionUpdate),
-		"deleted", countActions(results, models.ActionDelete),
 		"skipped", countActions(results, models.ActionSkip),
+		"extra_on_gitverse", len(extraOnGitVerse),
 	)
+
+	if len(extraOnGitVerse) > 0 {
+		s.logger.Info("repositories on GitVerse not found on GitHub",
+			"repositories", extraOnGitVerse,
+		)
+	}
 
 	return results, nil
 }
@@ -317,7 +307,7 @@ func (s *Syncer) ListDiff() ([]DiffItem, error) {
 				Name:        name,
 				GitHub:      nil,
 				GitVerse:    &gvRepo,
-				Description: "missing on GitHub (will be deleted if on_delete=delete)",
+				Description: "only on GitVerse",
 			})
 		}
 	}

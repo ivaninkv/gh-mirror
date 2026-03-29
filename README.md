@@ -8,7 +8,6 @@ CLI tool for mirroring GitHub repositories (including private) to GitVerse with 
 - Preserve repository privacy settings
 - Sync on-demand or via cron
 - Support for both creating new repositories and updating existing ones
-- Optional deletion of repositories removed from GitHub
 
 ## Requirements
 
@@ -36,7 +35,6 @@ gitverse:
   base_url: "https://gitverse.ru/api/v1"
 
 sync:
-  on_delete: "leave"  # "leave" or "delete" - behavior when repo is deleted on GitHub
   timeout_minutes: 30
 
 cron:
@@ -145,7 +143,7 @@ Add to crontab:
    - Creates or updates repository on GitVerse (preserving privacy)
    - Uses `git clone --mirror` to clone the full repository
    - Uses `git push --mirror` to push all branches and tags to GitVerse
-3. If `on_delete: delete` is set, repositories deleted on GitHub will be deleted from GitVerse
+3. Logs repositories that exist on GitVerse but not on GitHub (never deletes)
 
 ## License
 

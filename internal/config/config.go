@@ -25,8 +25,7 @@ type GitVerseConfig struct {
 }
 
 type SyncConfig struct {
-	OnDelete       string `yaml:"on_delete"`
-	TimeoutMinutes int    `yaml:"timeout_minutes"`
+	TimeoutMinutes int `yaml:"timeout_minutes"`
 }
 
 type CronConfig struct {
@@ -80,9 +79,6 @@ func (c *Config) validate() error {
 	}
 	if c.GitVerse.BaseURL == "" {
 		c.GitVerse.BaseURL = "https://gitverse.ru/api/v1"
-	}
-	if c.Sync.OnDelete == "" {
-		c.Sync.OnDelete = "leave"
 	}
 	if c.Sync.TimeoutMinutes == 0 {
 		c.Sync.TimeoutMinutes = 30

@@ -6,7 +6,6 @@ gitverse:
   base_url: "https://gitverse.ru/api/v1"
 
 sync:
-  on_delete: "leave"
   timeout_minutes: 30
 
 cron:
