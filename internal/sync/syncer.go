@@ -1,16 +1,13 @@
 package sync
 
 import (
-	"context"
 	"fmt"
 	"log/slog"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
-	"time"
 
 	"gh-mirror/internal/config"
+	"gh-mirror/internal/git"
 	"gh-mirror/internal/github"
 	"gh-mirror/internal/gitverse"
 	"gh-mirror/pkg/models"
@@ -250,49 +247,22 @@ func (s *Syncer) syncRepository(ghRepo, gvRepo models.Repository) models.SyncRes
 }
 
 func (s *Syncer) pushMirror(repo models.Repository) error {
-	repoPath := filepath.Join(s.tempDir, repo.Name)
-
-	if _, err := os.Stat(repoPath); err == nil {
-		if err := os.RemoveAll(repoPath); err != nil {
-			return fmt.Errorf("clean existing repo dir: %w", err)
-		}
-	}
+	repoPath := git.GetRepoPath(s.tempDir, repo.Name)
 
 	cloneURL := s.ghClient.CloneURLWithToken(repo, s.cfg.GitHub.Token)
 
-	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(s.cfg.Sync.TimeoutMinutes)*time.Minute)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "git", "clone", "--mirror", cloneURL, repoPath)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Env = append(os.Environ(),
-		"GIT_TERMINAL_PROMPT=0",
-	)
-
-	if err := cmd.Run(); err != nil {
+	repoHandle, err := git.Clone(cloneURL, repoPath, s.cfg.GitHub.Token)
+	if err != nil {
 		return fmt.Errorf("git clone: %w", err)
+	}
+
+	if err := git.DeletePullRefs(repoPath); err != nil {
+		return fmt.Errorf("delete pull refs: %w", err)
 	}
 
 	pushURL := s.gvClient.CloneURL(repo, s.cfg.GitVerse.Token)
 
-	cmd = exec.CommandContext(ctx, "git", "-C", repoPath, "remote", "set-url", "origin", pushURL)
-	if err := cmd.Run(); err != nil {
-		return fmt.Errorf("set push remote: %w", err)
-	}
-
-	deletePullCmd := exec.CommandContext(ctx, "sh", "-c", "git -C "+repoPath+" for-each-ref --format='delete %(refname)' refs/pull/ | git -C "+repoPath+" update-ref --stdin && git -C "+repoPath+" pack-refs --all")
-	deletePullCmd.Stdout = os.Stdout
-	deletePullCmd.Stderr = os.Stderr
-	if err := deletePullCmd.Run(); err != nil {
-		return fmt.Errorf("delete pull refs: %w", err)
-	}
-
-	cmd = exec.CommandContext(ctx, "git", "-C", repoPath, "push", "--force", pushURL, "+refs/heads/*:refs/heads/*", "+refs/tags/*:refs/tags/*")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-
-	if err := cmd.Run(); err != nil {
+	if err := git.Push(repoHandle, "origin", pushURL, s.cfg.GitVerse.Token, true); err != nil {
 		return fmt.Errorf("git push mirror: %w", err)
 	}
 
@@ -366,43 +336,24 @@ type DiffItem struct {
 	Description string
 }
 
-type RefMap map[string]string
-
-func (s *Syncer) getRemoteRefs(repo models.Repository, token string, remoteType string) (RefMap, error) {
+func (s *Syncer) getRemoteRefs(repo models.Repository, token string, remoteType string) (git.RefMap, error) {
 	var cloneURL string
-	var remoteName string
 
 	if remoteType == "github" {
 		cloneURL = s.ghClient.CloneURLWithToken(repo, token)
-		remoteName = "github"
 	} else {
 		cloneURL = s.gvClient.CloneURL(repo, token)
-		remoteName = "gitverse"
 	}
 
-	cmd := exec.Command("git", "ls-remote", cloneURL)
-	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
-
-	output, err := cmd.Output()
+	refs, err := git.ListRemote(cloneURL, token)
 	if err != nil {
-		return nil, fmt.Errorf("git ls-remote %s: %w", remoteName, err)
-	}
-
-	refs := make(RefMap)
-	lines := strings.Split(string(output), "\n")
-	for _, line := range lines {
-		parts := strings.Fields(line)
-		if len(parts) >= 2 {
-			sha := parts[0]
-			refName := parts[1]
-			refs[refName] = sha
-		}
+		return nil, fmt.Errorf("git ls-remote %s: %w", remoteType, err)
 	}
 
 	return refs, nil
 }
 
-func compareRefs(githubRefs, gitverseRefs RefMap) (bool, string) {
+func compareRefs(githubRefs, gitverseRefs git.RefMap) (bool, string) {
 	if len(githubRefs) != len(gitverseRefs) {
 		return false, fmt.Sprintf("ref count mismatch: GitHub=%d, GitVerse=%d", len(githubRefs), len(gitverseRefs))
 	}

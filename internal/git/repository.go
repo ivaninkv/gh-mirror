@@ -1,0 +1,172 @@
+package git
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/transport/http"
+	"github.com/go-git/go-git/v5/storage/memory"
+)
+
+type RefMap map[string]string
+
+func Clone(url, path string, token string) (*git.Repository, error) {
+	if err := CleanupRepoPath(path); err != nil {
+		return nil, err
+	}
+
+	auth := &http.BasicAuth{
+		Username: "x-access-token",
+		Password: token,
+	}
+
+	r, err := git.PlainClone(path, true, &git.CloneOptions{
+		URL:        url,
+		Auth:       auth,
+		NoCheckout: true,
+	})
+	if err != nil {
+		if strings.Contains(err.Error(), "already exists") {
+			return git.PlainOpen(path)
+		}
+		return nil, fmt.Errorf("git clone: %w", err)
+	}
+
+	return r, nil
+}
+
+func Push(repo *git.Repository, remoteName string, pushURL string, token string, force bool) error {
+	if err := SetRemoteURL(repo, remoteName, pushURL, token); err != nil {
+		return fmt.Errorf("set remote URL: %w", err)
+	}
+
+	refSpecs := []config.RefSpec{
+		"+refs/heads/*:refs/heads/*",
+		"+refs/tags/*:refs/tags/*",
+	}
+
+	auth := &http.BasicAuth{
+		Username: "x-access-token",
+		Password: token,
+	}
+
+	opts := &git.PushOptions{
+		RemoteName: remoteName,
+		RefSpecs:   refSpecs,
+		Auth:       auth,
+		Force:      force,
+	}
+
+	if err := repo.Push(opts); err != nil {
+		return fmt.Errorf("git push: %w", err)
+	}
+
+	return nil
+}
+
+func SetRemoteURL(repo *git.Repository, remoteName, url, token string) error {
+	_, err := repo.Remote(remoteName)
+	if err != nil {
+		if err == git.ErrRemoteNotFound {
+			_, err = repo.CreateRemote(&config.RemoteConfig{
+				Name: remoteName,
+				URLs: []string{url},
+			})
+			if err != nil {
+				return fmt.Errorf("create remote: %w", err)
+			}
+			return nil
+		}
+		return fmt.Errorf("get remote: %w", err)
+	}
+
+	cfg, err := repo.Config()
+	if err != nil {
+		return fmt.Errorf("get config: %w", err)
+	}
+
+	for i, r := range cfg.Remotes {
+		if r.Name == remoteName {
+			cfg.Remotes[i].URLs = []string{url}
+			break
+		}
+	}
+
+	if err := repo.SetConfig(cfg); err != nil {
+		return fmt.Errorf("set config: %w", err)
+	}
+
+	return nil
+}
+
+func ListRemote(url string, token string) (RefMap, error) {
+	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{url},
+	})
+
+	auth := &http.BasicAuth{
+		Username: "x-access-token",
+		Password: token,
+	}
+
+	refs, err := remote.List(&git.ListOptions{
+		Auth: auth,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("git ls-remote: %w", err)
+	}
+
+	result := make(RefMap)
+	for _, ref := range refs {
+		result[ref.Name().String()] = ref.Hash().String()
+	}
+
+	return result, nil
+}
+
+func DeletePullRefs(repoPath string) error {
+	r, err := git.PlainOpen(repoPath)
+	if err != nil {
+		return fmt.Errorf("open repo: %w", err)
+	}
+
+	refs, err := r.References()
+	if err != nil {
+		return fmt.Errorf("list references: %w", err)
+	}
+
+	var pullRefs []*plumbing.Reference
+	refs.ForEach(func(ref *plumbing.Reference) error {
+		if strings.HasPrefix(ref.Name().String(), "refs/pull/") {
+			pullRefs = append(pullRefs, ref)
+		}
+		return nil
+	})
+
+	for _, ref := range pullRefs {
+		if err := r.Storer.RemoveReference(ref.Name()); err != nil {
+			return fmt.Errorf("remove reference %s: %w", ref.Name(), err)
+		}
+	}
+
+	return nil
+}
+
+func CleanupRepoPath(repoPath string) error {
+	if _, err := os.Stat(repoPath); err == nil {
+		if err := os.RemoveAll(repoPath); err != nil {
+			return fmt.Errorf("clean existing repo dir: %w", err)
+		}
+	}
+	return nil
+}
+
+func GetRepoPath(tempDir, repoName string) string {
+	return filepath.Join(tempDir, repoName)
+}
