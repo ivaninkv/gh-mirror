@@ -1,6 +1,7 @@
 package git
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -63,6 +64,9 @@ func Push(repo *git.Repository, remoteName string, pushURL string, token string,
 	}
 
 	if err := repo.Push(opts); err != nil {
+		if errors.Is(err, git.NoErrAlreadyUpToDate) {
+			return nil
+		}
 		return fmt.Errorf("git push: %w", err)
 	}
 
