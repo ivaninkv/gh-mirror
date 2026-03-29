@@ -180,18 +180,19 @@ func (s *Syncer) syncRepository(ghRepo, gvRepo models.Repository) models.SyncRes
 		}
 		s.logger.Info("created repository", "name", ghRepo.Name)
 	} else {
-		if gvRepo.Private != ghRepo.Private {
-			if err := s.gvClient.UpdateRepositoryVisibility(s.gitverseUser, ghRepo.Name, ghRepo.Private); err != nil {
+		if gvRepo.Private != ghRepo.Private || gvRepo.Description != ghRepo.Description {
+			if err := s.gvClient.UpdateRepository(s.gitverseUser, ghRepo.Name, ghRepo.Private, ghRepo.Description); err != nil {
 				return models.SyncResult{
 					RepoName: ghRepo.Name,
 					Action:   action,
 					Error:    err,
-					Message:  "failed to update visibility",
+					Message:  "failed to update",
 				}
 			}
-			s.logger.Info("updated repository visibility",
+			s.logger.Info("updated repository",
 				"name", ghRepo.Name,
 				"private", ghRepo.Private,
+				"description", ghRepo.Description,
 			)
 		}
 	}

@@ -201,7 +201,8 @@ type CreateRepoRequest struct {
 }
 
 type UpdateRepoRequest struct {
-	Private bool `json:"private"`
+	Private     bool   `json:"private"`
+	Description string `json:"description,omitempty"`
 }
 
 func (c *Client) CreateRepository(name string, private bool, description string) (*models.Repository, error) {
@@ -238,13 +239,16 @@ func (c *Client) CreateRepository(name string, private bool, description string)
 	}, nil
 }
 
-func (c *Client) UpdateRepositoryVisibility(owner, repo string, private bool) error {
+func (c *Client) UpdateRepository(owner, repo string, private bool, description string) error {
 	path := fmt.Sprintf("/repos/%s/%s", owner, repo)
-	reqBody := UpdateRepoRequest{Private: private}
+	reqBody := UpdateRepoRequest{
+		Private:     private,
+		Description: description,
+	}
 
 	_, err := c.doRequest("PATCH", path, reqBody)
 	if err != nil {
-		return fmt.Errorf("update repository visibility: %w", err)
+		return fmt.Errorf("update repository: %w", err)
 	}
 
 	return nil
