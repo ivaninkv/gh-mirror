@@ -1,34 +1,35 @@
-# GitHub to GitVerse Mirror
+# GitHub → GitVerse Mirror
 
-CLI tool for mirroring GitHub repositories (including private) to GitVerse with all branches and tags.
+CLI-инструмент для зеркалирования репозиториев с GitHub (включая приватные) в GitVerse с сохранением всех веток и тегов.
 
-## Features
+## Возможности
 
-- Mirror all branches and tags
-- Preserve repository privacy settings
-- Sync on-demand or via cron
-- Support for both creating new repositories and updating existing ones
+- Синхронизация всех веток и тегов
+- Сохранение настроек приватности репозитория
+- Синхронизация по требованию
+- Поддержка создания новых и обновления существующих репозиториев
+- Сравнение репозиториев между GitHub и GitVerse
 
-## Requirements
+## Требования
 
-- Go 1.21+
+- Go 1.26+
 - Git
-- GitHub Personal Access Token with `repo` scope
-- GitVerse API token
+- GitHub Personal Access Token с правами `repo`
+- API-токен GitVerse
 
-## Installation
+## Установка
 
 ```bash
 go build -o mirror ./cmd/mirror/
 ```
 
-## Configuration
+## Настройка
 
-Create `config.yaml`:
+Создайте `config.yaml`:
 
 ```yaml
 github:
-  token: "${GITHUB_TOKEN}"  # PAT with repo scope
+  token: "${GITHUB_TOKEN}"  # PAT с правами repo
 
 gitverse:
   token: "${GITVERSE_TOKEN}"
@@ -36,115 +37,66 @@ gitverse:
 
 sync:
   timeout_minutes: 30
-
-cron:
-  enabled: false
-  interval_hours: 6
 ```
 
-Environment variables are supported via `${VAR_NAME}` syntax.
+Переменные окружения поддерживаются через синтаксис `${VAR_NAME}`.
 
-## Usage
+## Использование
 
-### Sync all repositories
+### Синхронизация всех репозиториев
 
 ```bash
 GITHUB_TOKEN=ghp_xxx GITVERSE_TOKEN=gvt_xxx ./mirror sync
 ```
 
-Or with config file:
+Или с файлом конфигурации:
 
 ```bash
 CONFIG_PATH=/path/to/config.yaml ./mirror sync
 ```
 
-### Sync specific repository
+### Синхронизация конкретного репозитория
 
 ```bash
 GITHUB_TOKEN=ghp_xxx GITVERSE_TOKEN=gvt_xxx ./mirror sync repository-name
 ```
 
-### List GitHub repositories
+### Список репозиториев на GitHub
 
 ```bash
 GITHUB_TOKEN=ghp_xxx ./mirror list
 ```
 
-### Show differences between GitHub and GitVerse
+### Показать различия между GitHub и GitVerse
 
 ```bash
 GITHUB_TOKEN=ghp_xxx GITVERSE_TOKEN=gvt_xxx ./mirror diff
 ```
 
-## Cron Setup
+## Настройка GitHub Token
 
-### systemd timer
-
-Create `/etc/systemd/system/gh-mirror.service`:
-
-```ini
-[Unit]
-Description=GitHub to GitVerse Mirror
-
-[Service]
-Type=oneshot
-Environment=CONFIG_PATH=/path/to/config.yaml
-ExecStart=/usr/local/bin/mirror sync
-```
-
-Create `/etc/systemd/system/gh-mirror.timer`:
-
-```ini
-[Unit]
-Description=GitHub to GitVerse Mirror Timer
-
-[Timer]
-OnCalendar=hourly
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-```
-
-Enable and start:
-
-```bash
-systemctl enable gh-mirror.timer
-systemctl start gh-mirror.timer
-```
-
-### Direct cron
-
-Add to crontab:
-
-```cron
-0 */6 * * * /path/to/mirror sync
-```
-
-## GitHub Token Setup
-
-1. Go to GitHub Settings → Developer settings → Personal access tokens → Fine-grained tokens
-2. Create new token with:
-   - Resource owner: your username
-   - Permissions: Repository access → All repositories
+1. Перейдите в GitHub Settings → Developer settings → Personal access tokens → Fine-grained tokens
+2. Создайте новый токен:
+   - Resource owner: ваше имя пользователя
+   - Repository access: All repositories
    - Permissions: Contents → Read and write
-3. Copy the token
+3. Скопируйте токен
 
-## GitVerse Token Setup
+## Настройка GitVerse Token
 
-1. Go to GitVerse → Profile → Settings → Tokens
-2. Create new token
-3. Copy the token
+1. Перейдите в GitVerse → Profile → Settings → Tokens
+2. Создайте новый токен
+3. Скопируйте токен
 
-## How It Works
+## Как это работает
 
-1. Lists all repositories from GitHub (including private)
-2. For each repository:
-   - Creates or updates repository on GitVerse (preserving privacy)
-   - Uses `git clone --mirror` to clone the full repository
-   - Uses `git push --mirror` to push all branches and tags to GitVerse
-3. Logs repositories that exist on GitVerse but not on GitHub (never deletes)
+1. Получает список всех репозиториев с GitHub (включая приватные)
+2. Для каждого репозитория:
+   - Создаёт или обновляет репозиторий на GitVerse (с сохранением приватности)
+   - Использует `git clone --mirror` для полного клонирования репозитория
+   - Использует `git push --mirror` для отправки всех веток и тегов в GitVerse
+3. Логирует репозитории, которые есть на GitVerse, но отсутствуют на GitHub (никогда не удаляет)
 
-## License
+## Лицензия
 
 MIT
