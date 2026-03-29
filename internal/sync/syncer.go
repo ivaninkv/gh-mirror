@@ -168,6 +168,42 @@ func (s *Syncer) syncRepository(ghRepo, gvRepo models.Repository) models.SyncRes
 		action = models.ActionCreate
 	}
 
+	if action == models.ActionUpdate {
+		s.logger.Info("checking refs for changes", "name", ghRepo.Name)
+
+		githubRefs, err := s.getRemoteRefs(ghRepo, s.cfg.GitHub.Token, "github")
+		if err != nil {
+			return models.SyncResult{
+				RepoName: ghRepo.Name,
+				Action:   action,
+				Error:    err,
+				Message:  "failed to get GitHub refs",
+			}
+		}
+
+		gitverseRefs, err := s.getRemoteRefs(ghRepo, s.cfg.GitVerse.Token, "gitverse")
+		if err != nil {
+			return models.SyncResult{
+				RepoName: ghRepo.Name,
+				Action:   action,
+				Error:    err,
+				Message:  "failed to get GitVerse refs",
+			}
+		}
+
+		inSync, reason := compareRefs(githubRefs, gitverseRefs)
+		if inSync {
+			s.logger.Info("repository already in sync", "name", ghRepo.Name)
+			return models.SyncResult{
+				RepoName: ghRepo.Name,
+				Action:   models.ActionSkip,
+				Message:  "already in sync",
+			}
+		}
+
+		s.logger.Info("refs differ, will sync", "name", ghRepo.Name, "reason", reason)
+	}
+
 	if action == models.ActionCreate {
 		_, err := s.gvClient.CreateRepository(ghRepo.Name, ghRepo.Private, ghRepo.Description)
 		if err != nil {
@@ -328,6 +364,60 @@ type DiffItem struct {
 	GitHub      *models.Repository
 	GitVerse    *models.Repository
 	Description string
+}
+
+type RefMap map[string]string
+
+func (s *Syncer) getRemoteRefs(repo models.Repository, token string, remoteType string) (RefMap, error) {
+	var cloneURL string
+	var remoteName string
+
+	if remoteType == "github" {
+		cloneURL = s.ghClient.CloneURLWithToken(repo, token)
+		remoteName = "github"
+	} else {
+		cloneURL = s.gvClient.CloneURL(repo, token)
+		remoteName = "gitverse"
+	}
+
+	cmd := exec.Command("git", "ls-remote", cloneURL)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("git ls-remote %s: %w", remoteName, err)
+	}
+
+	refs := make(RefMap)
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		parts := strings.Fields(line)
+		if len(parts) >= 2 {
+			sha := parts[0]
+			refName := parts[1]
+			refs[refName] = sha
+		}
+	}
+
+	return refs, nil
+}
+
+func compareRefs(githubRefs, gitverseRefs RefMap) (bool, string) {
+	if len(githubRefs) != len(gitverseRefs) {
+		return false, fmt.Sprintf("ref count mismatch: GitHub=%d, GitVerse=%d", len(githubRefs), len(gitverseRefs))
+	}
+
+	for ref, githubSHA := range githubRefs {
+		gitverseSHA, exists := gitverseRefs[ref]
+		if !exists {
+			return false, fmt.Sprintf("ref %s missing on GitVerse", ref)
+		}
+		if githubSHA != gitverseSHA {
+			return false, fmt.Sprintf("SHA mismatch for %s", ref)
+		}
+	}
+
+	return true, ""
 }
 
 func countActions(results []models.SyncResult, action models.SyncAction) int {
