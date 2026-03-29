@@ -3,7 +3,6 @@ package config
 import (
 	"os"
 	"regexp"
-	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -40,14 +39,6 @@ func expandEnvValue(value string) string {
 		envName := match[2 : len(match)-1]
 		return os.Getenv(envName)
 	})
-}
-
-func expandEnvMap(m map[string]string) map[string]string {
-	result := make(map[string]string)
-	for k, v := range m {
-		result[k] = expandEnvValue(v)
-	}
-	return result
 }
 
 func Load(path string) (*Config, error) {
@@ -93,19 +84,4 @@ type ConfigError struct {
 
 func (e *ConfigError) Error() string {
 	return "config: " + e.Field + " " + e.Message
-}
-
-func (c *Config) getFieldAsEnv(field string) string {
-	return expandEnvValue(field)
-}
-
-func getEnvOrDefault(key, defaultVal string) string {
-	if val := os.Getenv(key); val != "" {
-		return val
-	}
-	return defaultVal
-}
-
-func CleanupField(s string) string {
-	return strings.TrimSpace(s)
 }

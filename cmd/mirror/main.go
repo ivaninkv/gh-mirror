@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
 	"strings"
+	"time"
 
 	"gh-mirror/internal/config"
 	"gh-mirror/internal/sync"
@@ -97,13 +99,16 @@ func runSync(args []string, configPath string, logger *slog.Logger) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Sync.TimeoutMinutes)*time.Minute)
+	defer cancel()
+
 	syncer, err := sync.NewSyncer(cfg, logger)
 	if err != nil {
 		return fmt.Errorf("create syncer: %w", err)
 	}
 	defer syncer.Close()
 
-	if err := syncer.Init(); err != nil {
+	if err := syncer.Init(ctx); err != nil {
 		return fmt.Errorf("init syncer: %w", err)
 	}
 
@@ -111,14 +116,14 @@ func runSync(args []string, configPath string, logger *slog.Logger) error {
 		repoName := args[0]
 		logger.Info("syncing single repository", "name", repoName)
 
-		result, err := syncer.SyncOne(repoName)
+		result, err := syncer.SyncOne(ctx, repoName)
 		if err != nil {
 			return fmt.Errorf("sync repo: %w", err)
 		}
 
 		printSyncResult(result)
 	} else {
-		results, err := syncer.SyncAll()
+		results, err := syncer.SyncAll(ctx)
 		if err != nil {
 			return fmt.Errorf("sync all: %w", err)
 		}
@@ -149,17 +154,20 @@ func runList(args []string, configPath string, logger *slog.Logger) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Sync.TimeoutMinutes)*time.Minute)
+	defer cancel()
+
 	syncer, err := sync.NewSyncer(cfg, logger)
 	if err != nil {
 		return fmt.Errorf("create syncer: %w", err)
 	}
 	defer syncer.Close()
 
-	if err := syncer.Init(); err != nil {
+	if err := syncer.Init(ctx); err != nil {
 		return fmt.Errorf("init syncer: %w", err)
 	}
 
-	repos, err := syncer.ListRepositories()
+	repos, err := syncer.ListRepositories(ctx)
 	if err != nil {
 		return fmt.Errorf("list repositories: %w", err)
 	}
@@ -183,17 +191,20 @@ func runDiff(args []string, configPath string, logger *slog.Logger) error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Sync.TimeoutMinutes)*time.Minute)
+	defer cancel()
+
 	syncer, err := sync.NewSyncer(cfg, logger)
 	if err != nil {
 		return fmt.Errorf("create syncer: %w", err)
 	}
 	defer syncer.Close()
 
-	if err := syncer.Init(); err != nil {
+	if err := syncer.Init(ctx); err != nil {
 		return fmt.Errorf("init syncer: %w", err)
 	}
 
-	diff, err := syncer.ListDiff()
+	diff, err := syncer.ListDiff(ctx)
 	if err != nil {
 		return fmt.Errorf("list diff: %w", err)
 	}

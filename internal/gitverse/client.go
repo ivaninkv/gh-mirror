@@ -2,6 +2,7 @@ package gitverse
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -34,7 +35,7 @@ func (c *Client) SetDebug(debug bool) {
 	c.debug = debug
 }
 
-func (c *Client) doRequest(method, path string, body interface{}) ([]byte, error) {
+func (c *Client) doRequest(ctx context.Context, method, path string, body interface{}) ([]byte, error) {
 	var reqBody io.Reader
 	if body != nil {
 		jsonData, err := json.Marshal(body)
@@ -58,7 +59,7 @@ func (c *Client) doRequest(method, path string, body interface{}) ([]byte, error
 		fmt.Printf("GitVerse Request:\n%s\n", string(dump))
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("execute request: %w", err)
 	}
@@ -93,8 +94,8 @@ func (e *APIError) Error() string {
 	return fmt.Sprintf("gitverse API error: status=%d, body=%s", e.StatusCode, e.Message)
 }
 
-func (c *Client) GetAuthenticatedUser() (string, error) {
-	resp, err := c.doRequest("GET", "/user", nil)
+func (c *Client) GetAuthenticatedUser(ctx context.Context) (string, error) {
+	resp, err := c.doRequest(ctx, "GET", "/user", nil)
 	if err != nil {
 		return "", err
 	}
@@ -109,14 +110,14 @@ func (c *Client) GetAuthenticatedUser() (string, error) {
 	return user.Login, nil
 }
 
-func (c *Client) ListRepositories() ([]models.Repository, error) {
+func (c *Client) ListRepositories(ctx context.Context) ([]models.Repository, error) {
 	var allRepos []models.Repository
 	page := 1
 	perPage := 50
 
 	for {
 		path := fmt.Sprintf("/user/repos?page=%d&per_page=%d", page, perPage)
-		resp, err := c.doRequest("GET", path, nil)
+		resp, err := c.doRequest(ctx, "GET", path, nil)
 		if err != nil {
 			return nil, fmt.Errorf("list repositories: %w", err)
 		}
@@ -153,9 +154,9 @@ func (c *Client) ListRepositories() ([]models.Repository, error) {
 	return allRepos, nil
 }
 
-func (c *Client) RepositoryExists(owner, repo string) (bool, error) {
+func (c *Client) RepositoryExists(ctx context.Context, owner, repo string) (bool, error) {
 	path := fmt.Sprintf("/repos/%s/%s", owner, repo)
-	_, err := c.doRequest("GET", path, nil)
+	_, err := c.doRequest(ctx, "GET", path, nil)
 	if err != nil {
 		if apiErr, ok := err.(*APIError); ok && apiErr.StatusCode == 404 {
 			return false, nil
@@ -165,9 +166,9 @@ func (c *Client) RepositoryExists(owner, repo string) (bool, error) {
 	return true, nil
 }
 
-func (c *Client) GetRepository(owner, repo string) (*models.Repository, error) {
+func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*models.Repository, error) {
 	path := fmt.Sprintf("/repos/%s/%s", owner, repo)
-	resp, err := c.doRequest("GET", path, nil)
+	resp, err := c.doRequest(ctx, "GET", path, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -205,14 +206,14 @@ type UpdateRepoRequest struct {
 	Description string `json:"description,omitempty"`
 }
 
-func (c *Client) CreateRepository(name string, private bool, description string) (*models.Repository, error) {
+func (c *Client) CreateRepository(ctx context.Context, name string, private bool, description string) (*models.Repository, error) {
 	reqBody := CreateRepoRequest{
 		Name:        name,
 		Private:     private,
 		Description: description,
 	}
 
-	resp, err := c.doRequest("POST", "/user/repos", reqBody)
+	resp, err := c.doRequest(ctx, "POST", "/user/repos", reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("create repository: %w", err)
 	}
@@ -239,14 +240,14 @@ func (c *Client) CreateRepository(name string, private bool, description string)
 	}, nil
 }
 
-func (c *Client) UpdateRepository(owner, repo string, private bool, description string) error {
+func (c *Client) UpdateRepository(ctx context.Context, owner, repo string, private bool, description string) error {
 	path := fmt.Sprintf("/repos/%s/%s", owner, repo)
 	reqBody := UpdateRepoRequest{
 		Private:     private,
 		Description: description,
 	}
 
-	_, err := c.doRequest("PATCH", path, reqBody)
+	_, err := c.doRequest(ctx, "PATCH", path, reqBody)
 	if err != nil {
 		return fmt.Errorf("update repository: %w", err)
 	}
@@ -254,9 +255,9 @@ func (c *Client) UpdateRepository(owner, repo string, private bool, description 
 	return nil
 }
 
-func (c *Client) DeleteRepository(owner, repo string) error {
+func (c *Client) DeleteRepository(ctx context.Context, owner, repo string) error {
 	path := fmt.Sprintf("/repos/%s/%s", owner, repo)
-	_, err := c.doRequest("DELETE", path, nil)
+	_, err := c.doRequest(ctx, "DELETE", path, nil)
 	if err != nil {
 		return fmt.Errorf("delete repository: %w", err)
 	}
@@ -271,9 +272,9 @@ type BranchListResponse []struct {
 	Name string `json:"name"`
 }
 
-func (c *Client) ListBranches(owner, repo string) ([]models.Branch, error) {
+func (c *Client) ListBranches(ctx context.Context, owner, repo string) ([]models.Branch, error) {
 	path := fmt.Sprintf("/repos/%s/%s/branches", owner, repo)
-	resp, err := c.doRequest("GET", path, nil)
+	resp, err := c.doRequest(ctx, "GET", path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("list branches: %w", err)
 	}
@@ -306,9 +307,9 @@ type TagListResponse []struct {
 	} `json:"commit"`
 }
 
-func (c *Client) ListTags(owner, repo string) ([]models.Tag, error) {
+func (c *Client) ListTags(ctx context.Context, owner, repo string) ([]models.Tag, error) {
 	path := fmt.Sprintf("/repos/%s/%s/tags", owner, repo)
-	resp, err := c.doRequest("GET", path, nil)
+	resp, err := c.doRequest(ctx, "GET", path, nil)
 	if err != nil {
 		return nil, fmt.Errorf("list tags: %w", err)
 	}

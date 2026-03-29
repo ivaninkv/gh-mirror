@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"os"
@@ -14,8 +15,8 @@ import (
 )
 
 type Syncer struct {
-	ghClient     *github.Client
-	gvClient     *gitverse.Client
+	ghClient     GitHubClient
+	gvClient     GitVerseClient
 	cfg          *config.Config
 	logger       *slog.Logger
 	tempDir      string
@@ -45,14 +46,14 @@ func (s *Syncer) Close() error {
 	return os.RemoveAll(s.tempDir)
 }
 
-func (s *Syncer) Init() error {
+func (s *Syncer) Init(ctx context.Context) error {
 	var err error
-	s.githubUser, err = s.getGitHubUsername()
+	s.githubUser, err = s.getGitHubUsername(ctx)
 	if err != nil {
 		return fmt.Errorf("get GitHub username: %w", err)
 	}
 
-	s.gitverseUser, err = s.gvClient.GetAuthenticatedUser()
+	s.gitverseUser, err = s.gvClient.GetAuthenticatedUser(ctx)
 	if err != nil {
 		return fmt.Errorf("get GitVerse username: %w", err)
 	}
@@ -65,8 +66,8 @@ func (s *Syncer) Init() error {
 	return nil
 }
 
-func (s *Syncer) getGitHubUsername() (string, error) {
-	repos, err := s.ghClient.ListRepositories()
+func (s *Syncer) getGitHubUsername(ctx context.Context) (string, error) {
+	repos, err := s.ghClient.ListRepositories(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -77,15 +78,15 @@ func (s *Syncer) getGitHubUsername() (string, error) {
 	return parts[0], nil
 }
 
-func (s *Syncer) SyncAll() ([]models.SyncResult, error) {
+func (s *Syncer) SyncAll(ctx context.Context) ([]models.SyncResult, error) {
 	s.logger.Info("starting full sync")
 
-	githubRepos, err := s.ghClient.ListRepositories()
+	githubRepos, err := s.ghClient.ListRepositories(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list GitHub repositories: %w", err)
 	}
 
-	gitverseRepos, err := s.gvClient.ListRepositories()
+	gitverseRepos, err := s.gvClient.ListRepositories(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list GitVerse repositories: %w", err)
 	}
@@ -98,7 +99,7 @@ func (s *Syncer) SyncAll() ([]models.SyncResult, error) {
 	var results []models.SyncResult
 
 	for _, ghRepo := range githubRepos {
-		result := s.syncRepository(ghRepo, gitverseRepoMap[ghRepo.Name])
+		result := s.syncRepository(ctx, ghRepo, gitverseRepoMap[ghRepo.Name])
 		results = append(results, result)
 	}
 
@@ -131,30 +132,33 @@ func (s *Syncer) SyncAll() ([]models.SyncResult, error) {
 	return results, nil
 }
 
-func (s *Syncer) SyncOne(repoName string) (*models.SyncResult, error) {
-	ghRepo, err := s.ghClient.GetRepository(s.githubUser, repoName)
+func (s *Syncer) SyncOne(ctx context.Context, repoName string) (*models.SyncResult, error) {
+	ghRepo, err := s.ghClient.GetRepository(ctx, s.githubUser, repoName)
 	if err != nil {
 		return nil, fmt.Errorf("get GitHub repository: %w", err)
 	}
 
-	exists, err := s.gvClient.RepositoryExists(s.gitverseUser, repoName)
+	exists, err := s.gvClient.RepositoryExists(ctx, s.gitverseUser, repoName)
 	if err != nil {
 		return nil, fmt.Errorf("check GitVerse repository: %w", err)
 	}
 
 	var gvRepo models.Repository
 	if exists {
-		repo, _ := s.gvClient.GetRepository(s.gitverseUser, repoName)
+		repo, err := s.gvClient.GetRepository(ctx, s.gitverseUser, repoName)
+		if err != nil {
+			return nil, fmt.Errorf("get GitVerse repository: %w", err)
+		}
 		if repo != nil {
 			gvRepo = *repo
 		}
 	}
 
-	result := s.syncRepository(*ghRepo, gvRepo)
+	result := s.syncRepository(ctx, *ghRepo, gvRepo)
 	return &result, nil
 }
 
-func (s *Syncer) syncRepository(ghRepo, gvRepo models.Repository) models.SyncResult {
+func (s *Syncer) syncRepository(ctx context.Context, ghRepo, gvRepo models.Repository) models.SyncResult {
 	s.logger.Info("syncing repository",
 		"name", ghRepo.Name,
 		"private", ghRepo.Private,
@@ -202,7 +206,7 @@ func (s *Syncer) syncRepository(ghRepo, gvRepo models.Repository) models.SyncRes
 	}
 
 	if action == models.ActionCreate {
-		_, err := s.gvClient.CreateRepository(ghRepo.Name, ghRepo.Private, ghRepo.Description)
+		_, err := s.gvClient.CreateRepository(ctx, ghRepo.Name, ghRepo.Private, ghRepo.Description)
 		if err != nil {
 			return models.SyncResult{
 				RepoName: ghRepo.Name,
@@ -214,7 +218,7 @@ func (s *Syncer) syncRepository(ghRepo, gvRepo models.Repository) models.SyncRes
 		s.logger.Info("created repository", "name", ghRepo.Name)
 	} else {
 		if gvRepo.Private != ghRepo.Private || gvRepo.Description != ghRepo.Description {
-			if err := s.gvClient.UpdateRepository(s.gitverseUser, ghRepo.Name, ghRepo.Private, ghRepo.Description); err != nil {
+			if err := s.gvClient.UpdateRepository(ctx, s.gitverseUser, ghRepo.Name, ghRepo.Private, ghRepo.Description); err != nil {
 				return models.SyncResult{
 					RepoName: ghRepo.Name,
 					Action:   action,
@@ -269,17 +273,17 @@ func (s *Syncer) pushMirror(repo models.Repository) error {
 	return nil
 }
 
-func (s *Syncer) ListRepositories() ([]models.Repository, error) {
-	return s.ghClient.ListRepositories()
+func (s *Syncer) ListRepositories(ctx context.Context) ([]models.Repository, error) {
+	return s.ghClient.ListRepositories(ctx)
 }
 
-func (s *Syncer) ListDiff() ([]DiffItem, error) {
-	githubRepos, err := s.ghClient.ListRepositories()
+func (s *Syncer) ListDiff(ctx context.Context) ([]models.DiffItem, error) {
+	githubRepos, err := s.ghClient.ListRepositories(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list GitHub repositories: %w", err)
 	}
 
-	gitverseRepos, err := s.gvClient.ListRepositories()
+	gitverseRepos, err := s.gvClient.ListRepositories(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list GitVerse repositories: %w", err)
 	}
@@ -294,19 +298,19 @@ func (s *Syncer) ListDiff() ([]DiffItem, error) {
 		gitverseMap[r.Name] = r
 	}
 
-	var diff []DiffItem
+	var diff []models.DiffItem
 
 	for name, ghRepo := range githubMap {
 		gvRepo, exists := gitverseMap[name]
 		if !exists {
-			diff = append(diff, DiffItem{
+			diff = append(diff, models.DiffItem{
 				Name:        name,
 				GitHub:      &ghRepo,
 				GitVerse:    nil,
 				Description: "missing on GitVerse",
 			})
 		} else if ghRepo.Private != gvRepo.Private {
-			diff = append(diff, DiffItem{
+			diff = append(diff, models.DiffItem{
 				Name:        name,
 				GitHub:      &ghRepo,
 				GitVerse:    &gvRepo,
@@ -317,7 +321,7 @@ func (s *Syncer) ListDiff() ([]DiffItem, error) {
 
 	for name, gvRepo := range gitverseMap {
 		if _, exists := githubMap[name]; !exists {
-			diff = append(diff, DiffItem{
+			diff = append(diff, models.DiffItem{
 				Name:        name,
 				GitHub:      nil,
 				GitVerse:    &gvRepo,
@@ -327,13 +331,6 @@ func (s *Syncer) ListDiff() ([]DiffItem, error) {
 	}
 
 	return diff, nil
-}
-
-type DiffItem struct {
-	Name        string
-	GitHub      *models.Repository
-	GitVerse    *models.Repository
-	Description string
 }
 
 func (s *Syncer) getRemoteRefs(repo models.Repository, token string, remoteType string) (git.RefMap, error) {

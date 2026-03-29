@@ -36,3 +36,10 @@ type SyncResult struct {
 	Error    error
 	Message  string
 }
+
+type DiffItem struct {
+	Name        string
+	GitHub      *Repository
+	GitVerse    *Repository
+	Description string
+}
