@@ -245,6 +245,13 @@ func (s *Syncer) pushMirror(repo models.Repository) error {
 		return fmt.Errorf("set push remote: %w", err)
 	}
 
+	deletePullCmd := exec.CommandContext(ctx, "sh", "-c", "git -C "+repoPath+" for-each-ref --format='delete %(refname)' refs/pull/ | git -C "+repoPath+" update-ref --stdin")
+	deletePullCmd.Stdout = os.Stdout
+	deletePullCmd.Stderr = os.Stderr
+	if err := deletePullCmd.Run(); err != nil {
+		return fmt.Errorf("delete pull refs: %w", err)
+	}
+
 	cmd = exec.CommandContext(ctx, "git", "-C", repoPath, "push", "--mirror", "--force")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
