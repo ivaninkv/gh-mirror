@@ -1,0 +1,14 @@
+github:
+  token: "${GITHUB_TOKEN}"
+
+gitverse:
+  token: "${GITVERSE_TOKEN}"
+  base_url: "https://gitverse.ru/api/v1"
+
+sync:
+  on_delete: "leave"
+  timeout_minutes: 30
+
+cron:
+  enabled: false
+  interval_hours: 6
