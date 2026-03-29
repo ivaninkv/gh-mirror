@@ -28,7 +28,7 @@ func (c *Client) ListRepositories() ([]models.Repository, error) {
 
 	for {
 		repos, resp, err := c.client.Repositories.List(c.ctx, "", &github.RepositoryListOptions{
-			Type:      "all",
+			Type:      "owner",
 			Sort:      "updated",
 			Direction: "desc",
 			ListOptions: github.ListOptions{

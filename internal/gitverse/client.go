@@ -51,7 +51,7 @@ func (c *Client) doRequest(method, path string, body interface{}) ([]byte, error
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "application/vnd.gitverse.object+json;version=1")
 
 	if c.debug {
 		dump, _ := httputil.DumpRequestOut(req, body != nil)
