@@ -112,7 +112,7 @@ func (c *Client) GetAuthenticatedUser() (string, error) {
 func (c *Client) ListRepositories() ([]models.Repository, error) {
 	var allRepos []models.Repository
 	page := 1
-	perPage := 100
+	perPage := 50
 
 	for {
 		path := fmt.Sprintf("/user/repos?page=%d&per_page=%d", page, perPage)
