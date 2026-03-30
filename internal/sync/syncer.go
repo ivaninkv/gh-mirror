@@ -10,6 +10,7 @@ import (
 	"gh-mirror/internal/git"
 	"gh-mirror/pkg/models"
 	"gh-mirror/pkg/platform"
+	"gh-mirror/pkg/platforms/github"
 )
 
 type Syncer struct {
@@ -278,7 +279,7 @@ func (s *Syncer) pushMirror(repo models.Repository, dest platform.Platform) erro
 		return fmt.Errorf("git clone: %w", err)
 	}
 
-	if err := git.DeletePullRefs(repoPath); err != nil {
+	if err := github.DeletePullRefs(repoPath); err != nil {
 		return fmt.Errorf("delete pull refs: %w", err)
 	}
 
@@ -313,7 +314,6 @@ func (s *Syncer) ListDiff(ctx context.Context) ([]models.DiffItem, error) {
 	}
 
 	dest := s.destinations[0]
-	destUser := s.destUsers[dest.ID()]
 
 	destRepos, err := dest.ListRepositories(ctx)
 	if err != nil {
@@ -355,12 +355,10 @@ func (s *Syncer) ListDiff(ctx context.Context) ([]models.DiffItem, error) {
 		}
 	}
 
-	_ = destUser
-
 	return diff, nil
 }
 
-func (s *Syncer) getRemoteRefs(repo models.Repository, token string, p platform.Platform) (git.RefMap, error) {
+func (s *Syncer) getRemoteRefs(repo models.Repository, token string, p platform.Platform) (map[string]string, error) {
 	cloneURL := p.CloneURL(repo, token)
 
 	refs, err := git.ListRemote(cloneURL, token)
@@ -371,7 +369,7 @@ func (s *Syncer) getRemoteRefs(repo models.Repository, token string, p platform.
 	return refs, nil
 }
 
-func compareRefs(sourceRefs, destRefs git.RefMap) (bool, string) {
+func compareRefs(sourceRefs, destRefs map[string]string) (bool, string) {
 	if len(sourceRefs) != len(destRefs) {
 		return false, fmt.Sprintf("ref count mismatch: source=%d, dest=%d", len(sourceRefs), len(destRefs))
 	}

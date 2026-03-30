@@ -3,10 +3,13 @@ package github
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"gh-mirror/pkg/models"
 	"gh-mirror/pkg/platform"
 	"github.com/google/go-github/v67/github"
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
 )
 
 const PlatformID = models.PlatformID("github")
@@ -149,4 +152,32 @@ func (c *Client) RepositoryExists(ctx context.Context, owner, repo string) (bool
 
 func (c *Client) CloneURL(repo models.Repository, token string) string {
 	return fmt.Sprintf("https://%s@github.com/%s.git", token, repo.FullName)
+}
+
+func DeletePullRefs(repoPath string) error {
+	r, err := git.PlainOpen(repoPath)
+	if err != nil {
+		return fmt.Errorf("open repo: %w", err)
+	}
+
+	refs, err := r.References()
+	if err != nil {
+		return fmt.Errorf("list references: %w", err)
+	}
+
+	var pullRefs []*plumbing.Reference
+	refs.ForEach(func(ref *plumbing.Reference) error {
+		if strings.HasPrefix(ref.Name().String(), "refs/pull/") {
+			pullRefs = append(pullRefs, ref)
+		}
+		return nil
+	})
+
+	for _, ref := range pullRefs {
+		if err := r.Storer.RemoveReference(ref.Name()); err != nil {
+			return fmt.Errorf("remove reference %s: %w", ref.Name(), err)
+		}
+	}
+
+	return nil
 }

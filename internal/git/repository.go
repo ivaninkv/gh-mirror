@@ -9,12 +9,9 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
-	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/transport/http"
 	"github.com/go-git/go-git/v5/storage/memory"
 )
-
-type RefMap map[string]string
 
 func Clone(url, path string, token string) (*git.Repository, error) {
 	if err := CleanupRepoPath(path); err != nil {
@@ -108,7 +105,7 @@ func SetRemoteURL(repo *git.Repository, remoteName, url, token string) error {
 	return nil
 }
 
-func ListRemote(url string, token string) (RefMap, error) {
+func ListRemote(url string, token string) (map[string]string, error) {
 	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
 		Name: "origin",
 		URLs: []string{url},
@@ -126,40 +123,12 @@ func ListRemote(url string, token string) (RefMap, error) {
 		return nil, fmt.Errorf("git ls-remote: %w", err)
 	}
 
-	result := make(RefMap)
+	result := make(map[string]string)
 	for _, ref := range refs {
 		result[ref.Name().String()] = ref.Hash().String()
 	}
 
 	return result, nil
-}
-
-func DeletePullRefs(repoPath string) error {
-	r, err := git.PlainOpen(repoPath)
-	if err != nil {
-		return fmt.Errorf("open repo: %w", err)
-	}
-
-	refs, err := r.References()
-	if err != nil {
-		return fmt.Errorf("list references: %w", err)
-	}
-
-	var pullRefs []*plumbing.Reference
-	refs.ForEach(func(ref *plumbing.Reference) error {
-		if strings.HasPrefix(ref.Name().String(), "refs/pull/") {
-			pullRefs = append(pullRefs, ref)
-		}
-		return nil
-	})
-
-	for _, ref := range pullRefs {
-		if err := r.Storer.RemoveReference(ref.Name()); err != nil {
-			return fmt.Errorf("remove reference %s: %w", ref.Name(), err)
-		}
-	}
-
-	return nil
 }
 
 func CleanupRepoPath(repoPath string) error {

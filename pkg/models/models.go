@@ -13,23 +13,11 @@ type Repository struct {
 	UpdatedAt     string
 }
 
-type Branch struct {
-	Name      string
-	SHA       string
-	Protected bool
-}
-
-type Tag struct {
-	Name string
-	SHA  string
-}
-
 type SyncAction string
 
 const (
 	ActionCreate SyncAction = "create"
 	ActionUpdate SyncAction = "update"
-	ActionDelete SyncAction = "delete"
 	ActionSkip   SyncAction = "skip"
 )
 

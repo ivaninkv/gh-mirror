@@ -15,7 +15,6 @@ type Config struct {
 	Source       string                   `yaml:"source"`
 	Destinations []string                 `yaml:"destinations"`
 	Sync         SyncConfig               `yaml:"sync"`
-	Cron         CronConfig               `yaml:"cron"`
 }
 
 type PlatformConfig struct {
@@ -25,11 +24,6 @@ type PlatformConfig struct {
 
 type SyncConfig struct {
 	TimeoutMinutes int `yaml:"timeout_minutes"`
-}
-
-type CronConfig struct {
-	Enabled       bool `yaml:"enabled"`
-	IntervalHours int  `yaml:"interval_hours"`
 }
 
 var envVarPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
