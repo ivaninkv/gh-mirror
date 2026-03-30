@@ -10,6 +10,10 @@ platforms:
     token: "${GITLAB_TOKEN}"
     api_url: "https://gitlab.com/api/v4"
     url: "https://gitlab.com"
+  codeberg:
+    token: "${CODEBERG_TOKEN}"
+    api_url: "https://codeberg.org/api/v1"
+    url: "https://codeberg.org"
 
 source: github
 destinations:

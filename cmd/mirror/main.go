@@ -15,6 +15,7 @@ import (
 	"gh-mirror/pkg/platforms/github"
 	"gh-mirror/pkg/platforms/gitverse"
 	"gh-mirror/pkg/platforms/gitlab"
+	"gh-mirror/pkg/platforms/codeberg"
 )
 
 var Version = "dev"
@@ -23,6 +24,7 @@ func main() {
 	_ = github.PlatformID
 	_ = gitverse.PlatformID
 	_ = gitlab.PlatformID
+	_ = codeberg.PlatformID
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
