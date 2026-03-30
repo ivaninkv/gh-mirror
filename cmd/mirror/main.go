@@ -17,6 +17,8 @@ import (
 	"gh-mirror/pkg/platforms/gitlab"
 )
 
+var Version = "dev"
+
 func main() {
 	_ = github.PlatformID
 	_ = gitverse.PlatformID
@@ -52,6 +54,8 @@ func main() {
 		}
 	case "help", "--help", "-h":
 		printUsage()
+	case "--version", "-v":
+		fmt.Printf("mirror version %s\n", Version)
 	default:
 		fmt.Printf("unknown command: %s\n\n", os.Args[1])
 		printUsage()
