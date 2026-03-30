@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -18,7 +17,8 @@ import (
 const PlatformID = models.PlatformID("gitlab")
 
 type Client struct {
-	baseURL    string
+	apiURL     string
+	webURL     string
 	token      string
 	httpClient *http.Client
 }
@@ -37,12 +37,10 @@ func (c *Client) Name() string {
 	return "GitLab"
 }
 
-func (c *Client) Configure(token string, baseURL string) error {
+func (c *Client) Configure(token string, apiURL string, webURL string) error {
 	c.token = token
-	c.baseURL = strings.TrimSuffix(baseURL, "/")
-	if !strings.Contains(c.baseURL, "/api/") {
-		c.baseURL = c.baseURL + "/api/v4"
-	}
+	c.apiURL = strings.TrimSuffix(apiURL, "/")
+	c.webURL = webURL
 	c.httpClient = &http.Client{
 		Timeout: 60 * time.Second,
 	}
@@ -59,7 +57,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 		reqBody = bytes.NewReader(jsonData)
 	}
 
-	req, err := http.NewRequest(method, c.baseURL+path, reqBody)
+	req, err := http.NewRequest(method, c.apiURL+path, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -270,21 +268,5 @@ func (c *Client) RepositoryExists(ctx context.Context, owner, repo string) (bool
 }
 
 func (c *Client) CloneURL(repo models.Repository, token string) string {
-	return fmt.Sprintf("https://gitlab.com/%s.git", repo.FullName)
-}
-
-func ExtractOwnerAndRepo(fullName string) (owner, repoName string, err error) {
-	parts := strings.Split(fullName, "/")
-	if len(parts) != 2 {
-		return "", "", fmt.Errorf("invalid full name format: %s", fullName)
-	}
-	return parts[0], parts[1], nil
-}
-
-func ProjectID(owner, repo string) string {
-	return fmt.Sprintf("%s%%2F%s", owner, repo)
-}
-
-func StrToInt64(s string) (int64, error) {
-	return strconv.ParseInt(s, 10, 64)
+	return fmt.Sprintf("%s/%s.git", c.webURL, repo.FullName)
 }

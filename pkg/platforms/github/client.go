@@ -15,8 +15,9 @@ import (
 const PlatformID = models.PlatformID("github")
 
 type Client struct {
-	token  string
-	client *github.Client
+	token    string
+	webURL   string
+	client   *github.Client
 }
 
 func init() {
@@ -33,8 +34,12 @@ func (c *Client) Name() string {
 	return "GitHub"
 }
 
-func (c *Client) Configure(token string, baseURL string) error {
+func (c *Client) Configure(token string, apiURL string, webURL string) error {
+	if webURL == "" {
+		return fmt.Errorf("web URL is required")
+	}
 	c.token = token
+	c.webURL = webURL
 	c.client = github.NewTokenClient(context.Background(), token)
 	return nil
 }
@@ -151,7 +156,8 @@ func (c *Client) RepositoryExists(ctx context.Context, owner, repo string) (bool
 }
 
 func (c *Client) CloneURL(repo models.Repository, token string) string {
-	return fmt.Sprintf("https://%s@github.com/%s.git", token, repo.FullName)
+	host := strings.TrimPrefix(c.webURL, "https://")
+	return fmt.Sprintf("https://%s@%s/%s.git", token, host, repo.FullName)
 }
 
 func DeletePullRefs(repoPath string) error {

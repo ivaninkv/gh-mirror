@@ -18,8 +18,9 @@ type Config struct {
 }
 
 type PlatformConfig struct {
-	Token   string `yaml:"token"`
-	BaseURL string `yaml:"base_url"`
+	Token  string `yaml:"token"`
+	APIURL string `yaml:"api_url"`
+	URL    string `yaml:"url"`
 }
 
 type SyncConfig struct {

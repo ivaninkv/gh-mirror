@@ -17,7 +17,8 @@ import (
 const PlatformID = models.PlatformID("gitverse")
 
 type Client struct {
-	baseURL    string
+	apiURL     string
+	webURL     string
 	token      string
 	httpClient *http.Client
 }
@@ -36,9 +37,10 @@ func (c *Client) Name() string {
 	return "GitVerse"
 }
 
-func (c *Client) Configure(token string, baseURL string) error {
+func (c *Client) Configure(token string, apiURL string, webURL string) error {
 	c.token = token
-	c.baseURL = strings.TrimSuffix(baseURL, "/")
+	c.apiURL = strings.TrimSuffix(apiURL, "/")
+	c.webURL = webURL
 	c.httpClient = &http.Client{
 		Timeout: 60 * time.Second,
 	}
@@ -55,7 +57,7 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 		reqBody = bytes.NewReader(jsonData)
 	}
 
-	req, err := http.NewRequest(method, c.baseURL+path, reqBody)
+	req, err := http.NewRequest(method, c.apiURL+path, reqBody)
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
@@ -255,5 +257,6 @@ func (c *Client) RepositoryExists(ctx context.Context, owner, repo string) (bool
 }
 
 func (c *Client) CloneURL(repo models.Repository, token string) string {
-	return fmt.Sprintf("https://%s@gitverse.ru/%s.git", token, repo.FullName)
+	host := strings.TrimPrefix(c.webURL, "https://")
+	return fmt.Sprintf("https://%s@%s/%s.git", token, host, repo.FullName)
 }

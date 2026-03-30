@@ -96,7 +96,7 @@ func runSync(args []string, configPath string, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("create source platform: %w", err)
 	}
-	if err := source.Configure(cfg.Platforms[cfg.Source].Token, cfg.Platforms[cfg.Source].BaseURL); err != nil {
+	if err := source.Configure(cfg.Platforms[cfg.Source].Token, cfg.Platforms[cfg.Source].APIURL, cfg.Platforms[cfg.Source].URL); err != nil {
 		return fmt.Errorf("configure source platform: %w", err)
 	}
 
@@ -106,7 +106,7 @@ func runSync(args []string, configPath string, logger *slog.Logger) error {
 		if err != nil {
 			return fmt.Errorf("create destination platform %s: %w", destID, err)
 		}
-		if err := dest.Configure(cfg.Platforms[destID].Token, cfg.Platforms[destID].BaseURL); err != nil {
+		if err := dest.Configure(cfg.Platforms[destID].Token, cfg.Platforms[destID].APIURL, cfg.Platforms[destID].URL); err != nil {
 			return fmt.Errorf("configure destination platform %s: %w", destID, err)
 		}
 		destinations = append(destinations, dest)
@@ -173,7 +173,7 @@ func runList(args []string, configPath string, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("create source platform: %w", err)
 	}
-	if err := source.Configure(cfg.Platforms[cfg.Source].Token, cfg.Platforms[cfg.Source].BaseURL); err != nil {
+	if err := source.Configure(cfg.Platforms[cfg.Source].Token, cfg.Platforms[cfg.Source].APIURL, cfg.Platforms[cfg.Source].URL); err != nil {
 		return fmt.Errorf("configure source platform: %w", err)
 	}
 
@@ -183,7 +183,7 @@ func runList(args []string, configPath string, logger *slog.Logger) error {
 		if err != nil {
 			return fmt.Errorf("create destination platform %s: %w", destID, err)
 		}
-		if err := dest.Configure(cfg.Platforms[destID].Token, cfg.Platforms[destID].BaseURL); err != nil {
+		if err := dest.Configure(cfg.Platforms[destID].Token, cfg.Platforms[destID].APIURL, cfg.Platforms[destID].URL); err != nil {
 			return fmt.Errorf("configure destination platform %s: %w", destID, err)
 		}
 		destinations = append(destinations, dest)
@@ -231,7 +231,7 @@ func runDiff(args []string, configPath string, logger *slog.Logger) error {
 	if err != nil {
 		return fmt.Errorf("create source platform: %w", err)
 	}
-	if err := source.Configure(cfg.Platforms[cfg.Source].Token, cfg.Platforms[cfg.Source].BaseURL); err != nil {
+	if err := source.Configure(cfg.Platforms[cfg.Source].Token, cfg.Platforms[cfg.Source].APIURL, cfg.Platforms[cfg.Source].URL); err != nil {
 		return fmt.Errorf("configure source platform: %w", err)
 	}
 
@@ -241,7 +241,7 @@ func runDiff(args []string, configPath string, logger *slog.Logger) error {
 		if err != nil {
 			return fmt.Errorf("create destination platform %s: %w", destID, err)
 		}
-		if err := dest.Configure(cfg.Platforms[destID].Token, cfg.Platforms[destID].BaseURL); err != nil {
+		if err := dest.Configure(cfg.Platforms[destID].Token, cfg.Platforms[destID].APIURL, cfg.Platforms[destID].URL); err != nil {
 			return fmt.Errorf("configure destination platform %s: %w", destID, err)
 		}
 		destinations = append(destinations, dest)

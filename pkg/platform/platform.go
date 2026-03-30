@@ -8,7 +8,7 @@ import (
 type Platform interface {
 	ID() models.PlatformID
 	Name() string
-	Configure(token string, baseURL string) error
+	Configure(token string, apiURL string, webURL string) error
 
 	GetAuthenticatedUser(ctx context.Context) (string, error)
 	ListRepositories(ctx context.Context) ([]models.Repository, error)

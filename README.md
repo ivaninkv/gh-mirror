@@ -38,9 +38,11 @@ go build -ldflags="-s -w" -o mirror ./cmd/mirror/
 platforms:
   github:
     token: "${GITHUB_TOKEN}"
+    url: "https://github.com"
   gitverse:
     token: "${GITVERSE_TOKEN}"
-    base_url: "https://gitverse.ru/api/v1"
+    api_url: "https://api.gitverse.ru"
+    url: "https://gitverse.ru"
 
 source: github
 destinations:
@@ -58,12 +60,15 @@ sync:
 platforms:
   github:
     token: "${GITHUB_TOKEN}"
+    url: "https://github.com"
   gitverse:
     token: "${GITVERSE_TOKEN}"
-    base_url: "https://gitverse.ru/api/v1"
+    api_url: "https://api.gitverse.ru"
+    url: "https://gitverse.ru"
   gitlab:
     token: "${GITLAB_TOKEN}"
-    base_url: "https://gitlab.com"
+    api_url: "https://gitlab.com/api/v4"
+    url: "https://gitlab.com"
 
 source: github
 destinations:
