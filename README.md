@@ -63,7 +63,7 @@ platforms:
     base_url: "https://gitverse.ru/api/v1"
   gitlab:
     token: "${GITLAB_TOKEN}"
-    base_url: "https://gitlab.com/api/v4"
+    base_url: "https://gitlab.com"
 
 source: github
 destinations:
@@ -93,6 +93,15 @@ CONFIG_PATH=/path/to/config.yaml mirror diff        # различия межд�
 
 1. Перейдите в GitVerse → Profile → Settings → Tokens
 2. Создайте новый токен
+3. Скопируйте токен
+
+## Настройка GitLab Token
+
+1. Перейдите в GitLab → Profile → Access Tokens
+2. Создайте новый токен:
+   - Token name:任意名称
+   - Expiration date:任选
+   - Scopes: `read_api`, `write_repository`
 3. Скопируйте токен
 
 ## Добавление новой платформы

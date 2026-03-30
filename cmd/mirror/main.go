@@ -14,11 +14,13 @@ import (
 	"gh-mirror/pkg/platform"
 	"gh-mirror/pkg/platforms/github"
 	"gh-mirror/pkg/platforms/gitverse"
+	"gh-mirror/pkg/platforms/gitlab"
 )
 
 func main() {
 	_ = github.PlatformID
 	_ = gitverse.PlatformID
+	_ = gitlab.PlatformID
 
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
