@@ -1,6 +1,9 @@
 package models
 
+type PlatformID string
+
 type Repository struct {
+	PlatformID    PlatformID
 	Name          string
 	FullName      string
 	Description   string
@@ -31,15 +34,16 @@ const (
 )
 
 type SyncResult struct {
-	RepoName string
-	Action   SyncAction
-	Error    error
-	Message  string
+	RepoName    string
+	Destination PlatformID
+	Action      SyncAction
+	Error       error
+	Message     string
 }
 
 type DiffItem struct {
 	Name        string
-	GitHub      *Repository
-	GitVerse    *Repository
+	Source      *Repository
+	Destination *Repository
 	Description string
 }

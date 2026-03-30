@@ -1,24 +1,24 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"regexp"
 
+	"gh-mirror/pkg/models"
+	"gh-mirror/pkg/platform"
 	"gopkg.in/yaml.v3"
 )
 
 type Config struct {
-	GitHub   GitHubConfig   `yaml:"github"`
-	GitVerse GitVerseConfig `yaml:"gitverse"`
-	Sync     SyncConfig     `yaml:"sync"`
-	Cron     CronConfig     `yaml:"cron"`
+	Platforms    map[string]PlatformConfig `yaml:"platforms"`
+	Source       string                   `yaml:"source"`
+	Destinations []string                 `yaml:"destinations"`
+	Sync         SyncConfig               `yaml:"sync"`
+	Cron         CronConfig               `yaml:"cron"`
 }
 
-type GitHubConfig struct {
-	Token string `yaml:"token"`
-}
-
-type GitVerseConfig struct {
+type PlatformConfig struct {
 	Token   string `yaml:"token"`
 	BaseURL string `yaml:"base_url"`
 }
@@ -62,18 +62,43 @@ func Load(path string) (*Config, error) {
 }
 
 func (c *Config) validate() error {
-	if c.GitHub.Token == "" {
-		return &ConfigError{Field: "github.token", Message: "required"}
+	if c.Source == "" {
+		return &ConfigError{Field: "source", Message: "required"}
 	}
-	if c.GitVerse.Token == "" {
-		return &ConfigError{Field: "gitverse.token", Message: "required"}
+
+	sourceID := models.PlatformID(c.Source)
+	if _, err := platform.Create(sourceID); err != nil {
+		return &ConfigError{Field: "source", Message: fmt.Sprintf("unsupported platform: %s", c.Source)}
 	}
-	if c.GitVerse.BaseURL == "" {
-		c.GitVerse.BaseURL = "https://gitverse.ru/api/v1"
+
+	if c.Platforms == nil {
+		c.Platforms = make(map[string]PlatformConfig)
 	}
+
+	if _, hasSourceConfig := c.Platforms[c.Source]; !hasSourceConfig {
+		return &ConfigError{Field: fmt.Sprintf("platforms.%s", c.Source), Message: "platform configuration required"}
+	}
+
+	for _, dest := range c.Destinations {
+		destID := models.PlatformID(dest)
+		if _, err := platform.Create(destID); err != nil {
+			return &ConfigError{Field: "destinations", Message: fmt.Sprintf("unsupported platform: %s", dest)}
+		}
+		if _, hasDestConfig := c.Platforms[dest]; !hasDestConfig {
+			return &ConfigError{Field: fmt.Sprintf("platforms.%s", dest), Message: "platform configuration required"}
+		}
+	}
+
+	for _, dest := range c.Destinations {
+		if dest == c.Source {
+			return &ConfigError{Field: "destinations", Message: fmt.Sprintf("destination cannot be same as source: %s", c.Source)}
+		}
+	}
+
 	if c.Sync.TimeoutMinutes == 0 {
 		c.Sync.TimeoutMinutes = 30
 	}
+
 	return nil
 }
 
@@ -83,5 +108,5 @@ type ConfigError struct {
 }
 
 func (e *ConfigError) Error() string {
-	return "config: " + e.Field + " " + e.Message
+	return fmt.Sprintf("config: %s %s", e.Field, e.Message)
 }

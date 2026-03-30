@@ -11,9 +11,15 @@ import (
 	"gh-mirror/internal/config"
 	"gh-mirror/internal/sync"
 	"gh-mirror/pkg/models"
+	"gh-mirror/pkg/platform"
+	"gh-mirror/pkg/platforms/github"
+	"gh-mirror/pkg/platforms/gitverse"
 )
 
 func main() {
+	_ = github.PlatformID
+	_ = gitverse.PlatformID
+
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
 	}))
@@ -66,30 +72,12 @@ Usage:
 
 Commands:
   sync [repo-name]    Sync all repositories or a specific one
-  list                 List all GitHub repositories
-  diff                 Show differences between GitHub and GitVerse
+  list                 List all repositories from source platform
+  diff                 Show differences between source and first destination
   help                 Show this help message
 
-Environment variables:
-  CONFIG_PATH          Path to config file (default: config.yaml)
-  GITHUB_TOKEN         GitHub personal access token
-  GITVERSE_TOKEN       GitVerse API token
-
-Examples:
-  # Sync all repositories
-  mirror sync
-
-  # Sync a specific repository
-  mirror sync my-repo
-
-  # List GitHub repositories
-  mirror list
-
-  # Show differences
-  mirror diff
-
-  # With custom config
-  CONFIG_PATH=/path/to/config.yaml mirror sync
+Configuration:
+  All settings are managed via config.yaml (see config.yaml.example)
 `)
 }
 
@@ -102,7 +90,27 @@ func runSync(args []string, configPath string, logger *slog.Logger) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Sync.TimeoutMinutes)*time.Minute)
 	defer cancel()
 
-	syncer, err := sync.NewSyncer(cfg, logger)
+	source, err := platform.Create(models.PlatformID(cfg.Source))
+	if err != nil {
+		return fmt.Errorf("create source platform: %w", err)
+	}
+	if err := source.Configure(cfg.Platforms[cfg.Source].Token, cfg.Platforms[cfg.Source].BaseURL); err != nil {
+		return fmt.Errorf("configure source platform: %w", err)
+	}
+
+	var destinations []platform.Platform
+	for _, destID := range cfg.Destinations {
+		dest, err := platform.Create(models.PlatformID(destID))
+		if err != nil {
+			return fmt.Errorf("create destination platform %s: %w", destID, err)
+		}
+		if err := dest.Configure(cfg.Platforms[destID].Token, cfg.Platforms[destID].BaseURL); err != nil {
+			return fmt.Errorf("configure destination platform %s: %w", destID, err)
+		}
+		destinations = append(destinations, dest)
+	}
+
+	syncer, err := sync.NewSyncer(source, destinations, cfg, logger)
 	if err != nil {
 		return fmt.Errorf("create syncer: %w", err)
 	}
@@ -116,12 +124,14 @@ func runSync(args []string, configPath string, logger *slog.Logger) error {
 		repoName := args[0]
 		logger.Info("syncing single repository", "name", repoName)
 
-		result, err := syncer.SyncOne(ctx, repoName)
+		results, err := syncer.SyncOne(ctx, repoName)
 		if err != nil {
 			return fmt.Errorf("sync repo: %w", err)
 		}
 
-		printSyncResult(result)
+		for _, r := range results {
+			printSyncResult(&r)
+		}
 	} else {
 		results, err := syncer.SyncAll(ctx)
 		if err != nil {
@@ -142,9 +152,9 @@ func printSyncResult(r *models.SyncResult) {
 	status := "✓"
 	if r.Error != nil {
 		status = "✗"
-		fmt.Printf("[%s] %s %s: %v - %s\n", status, r.Action, r.RepoName, r.Error, r.Message)
+		fmt.Printf("[%s] %s %s -> %s: %v - %s\n", status, r.Action, r.RepoName, r.Destination, r.Error, r.Message)
 	} else {
-		fmt.Printf("[%s] %s %s: %s\n", status, r.Action, r.RepoName, r.Message)
+		fmt.Printf("[%s] %s %s -> %s: %s\n", status, r.Action, r.RepoName, r.Destination, r.Message)
 	}
 }
 
@@ -157,7 +167,27 @@ func runList(args []string, configPath string, logger *slog.Logger) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Sync.TimeoutMinutes)*time.Minute)
 	defer cancel()
 
-	syncer, err := sync.NewSyncer(cfg, logger)
+	source, err := platform.Create(models.PlatformID(cfg.Source))
+	if err != nil {
+		return fmt.Errorf("create source platform: %w", err)
+	}
+	if err := source.Configure(cfg.Platforms[cfg.Source].Token, cfg.Platforms[cfg.Source].BaseURL); err != nil {
+		return fmt.Errorf("configure source platform: %w", err)
+	}
+
+	var destinations []platform.Platform
+	for _, destID := range cfg.Destinations {
+		dest, err := platform.Create(models.PlatformID(destID))
+		if err != nil {
+			return fmt.Errorf("create destination platform %s: %w", destID, err)
+		}
+		if err := dest.Configure(cfg.Platforms[destID].Token, cfg.Platforms[destID].BaseURL); err != nil {
+			return fmt.Errorf("configure destination platform %s: %w", destID, err)
+		}
+		destinations = append(destinations, dest)
+	}
+
+	syncer, err := sync.NewSyncer(source, destinations, cfg, logger)
 	if err != nil {
 		return fmt.Errorf("create syncer: %w", err)
 	}
@@ -172,7 +202,8 @@ func runList(args []string, configPath string, logger *slog.Logger) error {
 		return fmt.Errorf("list repositories: %w", err)
 	}
 
-	fmt.Printf("GitHub Repositories (%d total):\n", len(repos))
+	fmt.Printf("Source: %s (%s)\n", cfg.Source, source.Name())
+	fmt.Printf("Repositories (%d total):\n", len(repos))
 	fmt.Println(strings.Repeat("─", 80))
 	for _, r := range repos {
 		visibility := "public"
@@ -194,7 +225,27 @@ func runDiff(args []string, configPath string, logger *slog.Logger) error {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Sync.TimeoutMinutes)*time.Minute)
 	defer cancel()
 
-	syncer, err := sync.NewSyncer(cfg, logger)
+	source, err := platform.Create(models.PlatformID(cfg.Source))
+	if err != nil {
+		return fmt.Errorf("create source platform: %w", err)
+	}
+	if err := source.Configure(cfg.Platforms[cfg.Source].Token, cfg.Platforms[cfg.Source].BaseURL); err != nil {
+		return fmt.Errorf("configure source platform: %w", err)
+	}
+
+	var destinations []platform.Platform
+	for _, destID := range cfg.Destinations {
+		dest, err := platform.Create(models.PlatformID(destID))
+		if err != nil {
+			return fmt.Errorf("create destination platform %s: %w", destID, err)
+		}
+		if err := dest.Configure(cfg.Platforms[destID].Token, cfg.Platforms[destID].BaseURL); err != nil {
+			return fmt.Errorf("configure destination platform %s: %w", destID, err)
+		}
+		destinations = append(destinations, dest)
+	}
+
+	syncer, err := sync.NewSyncer(source, destinations, cfg, logger)
 	if err != nil {
 		return fmt.Errorf("create syncer: %w", err)
 	}
@@ -218,10 +269,10 @@ func runDiff(args []string, configPath string, logger *slog.Logger) error {
 	fmt.Println(strings.Repeat("─", 80))
 
 	for _, d := range diff {
-		if d.GitHub != nil && d.GitVerse == nil {
-			fmt.Printf("[+] GitHub only: %s (private=%v)\n", d.Name, d.GitHub.Private)
-		} else if d.GitHub == nil && d.GitVerse != nil {
-			fmt.Printf("[-] GitVerse only: %s (private=%v) - %s\n", d.Name, d.GitVerse.Private, d.Description)
+		if d.Source != nil && d.Destination == nil {
+			fmt.Printf("[+] %s only on source: %s (private=%v)\n", d.Name, cfg.Source, d.Source.Private)
+		} else if d.Source == nil && d.Destination != nil {
+			fmt.Printf("[-] %s only on destination: %s (private=%v) - %s\n", d.Name, cfg.Destinations[0], d.Destination.Private, d.Description)
 		} else {
 			fmt.Printf("[~] Mismatch: %s - %s\n", d.Name, d.Description)
 		}

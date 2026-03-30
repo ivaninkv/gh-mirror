@@ -1,9 +1,13 @@
-github:
-  token: "${GITHUB_TOKEN}"
+platforms:
+  github:
+    token: "${GITHUB_TOKEN}"
+  gitverse:
+    token: "${GITVERSE_TOKEN}"
+    base_url: "https://gitverse.ru/api/v1"
 
-gitverse:
-  token: "${GITVERSE_TOKEN}"
-  base_url: "https://gitverse.ru/api/v1"
+source: github
+destinations:
+  - gitverse
 
 sync:
   timeout_minutes: 30

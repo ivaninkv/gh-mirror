@@ -7,32 +7,42 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httputil"
 	"strings"
 	"time"
 
 	"gh-mirror/pkg/models"
+	"gh-mirror/pkg/platform"
 )
+
+const PlatformID = models.PlatformID("gitverse")
 
 type Client struct {
 	baseURL    string
 	token      string
 	httpClient *http.Client
-	debug      bool
 }
 
-func NewClient(baseURL, token string) *Client {
-	return &Client{
-		baseURL: strings.TrimSuffix(baseURL, "/"),
-		token:   token,
-		httpClient: &http.Client{
-			Timeout: 60 * time.Second,
-		},
+func init() {
+	platform.Register(PlatformID, func() platform.Platform {
+		return &Client{}
+	})
+}
+
+func (c *Client) ID() models.PlatformID {
+	return PlatformID
+}
+
+func (c *Client) Name() string {
+	return "GitVerse"
+}
+
+func (c *Client) Configure(token string, baseURL string) error {
+	c.token = token
+	c.baseURL = strings.TrimSuffix(baseURL, "/")
+	c.httpClient = &http.Client{
+		Timeout: 60 * time.Second,
 	}
-}
-
-func (c *Client) SetDebug(debug bool) {
-	c.debug = debug
+	return nil
 }
 
 func (c *Client) doRequest(ctx context.Context, method, path string, body interface{}) ([]byte, error) {
@@ -54,21 +64,11 @@ func (c *Client) doRequest(ctx context.Context, method, path string, body interf
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/vnd.gitverse.object+json;version=1")
 
-	if c.debug {
-		dump, _ := httputil.DumpRequestOut(req, body != nil)
-		fmt.Printf("GitVerse Request:\n%s\n", string(dump))
-	}
-
 	resp, err := c.httpClient.Do(req.WithContext(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("execute request: %w", err)
 	}
 	defer resp.Body.Close()
-
-	if c.debug {
-		dump, _ := httputil.DumpResponse(resp, true)
-		fmt.Printf("GitVerse Response:\n%s\n", string(dump))
-	}
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -136,6 +136,7 @@ func (c *Client) ListRepositories(ctx context.Context) ([]models.Repository, err
 
 		for _, r := range repos {
 			allRepos = append(allRepos, models.Repository{
+				PlatformID:    PlatformID,
 				Name:          r.Name,
 				FullName:      r.FullName,
 				Description:   r.Description,
@@ -152,18 +153,6 @@ func (c *Client) ListRepositories(ctx context.Context) ([]models.Repository, err
 	}
 
 	return allRepos, nil
-}
-
-func (c *Client) RepositoryExists(ctx context.Context, owner, repo string) (bool, error) {
-	path := fmt.Sprintf("/repos/%s/%s", owner, repo)
-	_, err := c.doRequest(ctx, "GET", path, nil)
-	if err != nil {
-		if apiErr, ok := err.(*APIError); ok && apiErr.StatusCode == 404 {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
 }
 
 func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*models.Repository, error) {
@@ -186,6 +175,7 @@ func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*models
 	}
 
 	return &models.Repository{
+		PlatformID:    PlatformID,
 		Name:          r.Name,
 		FullName:      r.FullName,
 		Description:   r.Description,
@@ -195,19 +185,12 @@ func (c *Client) GetRepository(ctx context.Context, owner, repo string) (*models
 	}, nil
 }
 
-type CreateRepoRequest struct {
-	Name        string `json:"name"`
-	Private     bool   `json:"private"`
-	Description string `json:"description,omitempty"`
-}
-
-type UpdateRepoRequest struct {
-	Private     bool   `json:"private"`
-	Description string `json:"description,omitempty"`
-}
-
 func (c *Client) CreateRepository(ctx context.Context, name string, private bool, description string) (*models.Repository, error) {
-	reqBody := CreateRepoRequest{
+	reqBody := struct {
+		Name        string `json:"name"`
+		Private     bool   `json:"private"`
+		Description string `json:"description,omitempty"`
+	}{
 		Name:        name,
 		Private:     private,
 		Description: description,
@@ -231,6 +214,7 @@ func (c *Client) CreateRepository(ctx context.Context, name string, private bool
 	}
 
 	return &models.Repository{
+		PlatformID:    PlatformID,
 		Name:          r.Name,
 		FullName:      r.FullName,
 		Description:   r.Description,
@@ -242,7 +226,10 @@ func (c *Client) CreateRepository(ctx context.Context, name string, private bool
 
 func (c *Client) UpdateRepository(ctx context.Context, owner, repo string, private bool, description string) error {
 	path := fmt.Sprintf("/repos/%s/%s", owner, repo)
-	reqBody := UpdateRepoRequest{
+	reqBody := struct {
+		Private     bool   `json:"private"`
+		Description string `json:"description,omitempty"`
+	}{
 		Private:     private,
 		Description: description,
 	}
@@ -255,82 +242,18 @@ func (c *Client) UpdateRepository(ctx context.Context, owner, repo string, priva
 	return nil
 }
 
-func (c *Client) DeleteRepository(ctx context.Context, owner, repo string) error {
+func (c *Client) RepositoryExists(ctx context.Context, owner, repo string) (bool, error) {
 	path := fmt.Sprintf("/repos/%s/%s", owner, repo)
-	_, err := c.doRequest(ctx, "DELETE", path, nil)
+	_, err := c.doRequest(ctx, "GET", path, nil)
 	if err != nil {
-		return fmt.Errorf("delete repository: %w", err)
+		if apiErr, ok := err.(*APIError); ok && apiErr.StatusCode == 404 {
+			return false, nil
+		}
+		return false, err
 	}
-	return nil
+	return true, nil
 }
 
 func (c *Client) CloneURL(repo models.Repository, token string) string {
 	return fmt.Sprintf("https://%s@gitverse.ru/%s.git", token, repo.FullName)
-}
-
-type BranchListResponse []struct {
-	Name string `json:"name"`
-}
-
-func (c *Client) ListBranches(ctx context.Context, owner, repo string) ([]models.Branch, error) {
-	path := fmt.Sprintf("/repos/%s/%s/branches", owner, repo)
-	resp, err := c.doRequest(ctx, "GET", path, nil)
-	if err != nil {
-		return nil, fmt.Errorf("list branches: %w", err)
-	}
-
-	var branches []struct {
-		Name   string `json:"name"`
-		Commit struct {
-			SHA string `json:"sha"`
-		} `json:"commit"`
-	}
-	if err := json.Unmarshal(resp, &branches); err != nil {
-		return nil, fmt.Errorf("parse branches response: %w", err)
-	}
-
-	var result []models.Branch
-	for _, b := range branches {
-		result = append(result, models.Branch{
-			Name: b.Name,
-			SHA:  b.Commit.SHA,
-		})
-	}
-
-	return result, nil
-}
-
-type TagListResponse []struct {
-	Name   string `json:"name"`
-	Commit struct {
-		SHA string `json:"sha"`
-	} `json:"commit"`
-}
-
-func (c *Client) ListTags(ctx context.Context, owner, repo string) ([]models.Tag, error) {
-	path := fmt.Sprintf("/repos/%s/%s/tags", owner, repo)
-	resp, err := c.doRequest(ctx, "GET", path, nil)
-	if err != nil {
-		return nil, fmt.Errorf("list tags: %w", err)
-	}
-
-	var tags []struct {
-		Name   string `json:"name"`
-		Commit struct {
-			SHA string `json:"sha"`
-		} `json:"commit"`
-	}
-	if err := json.Unmarshal(resp, &tags); err != nil {
-		return nil, fmt.Errorf("parse tags response: %w", err)
-	}
-
-	var result []models.Tag
-	for _, t := range tags {
-		result = append(result, models.Tag{
-			Name: t.Name,
-			SHA:  t.Commit.SHA,
-		})
-	}
-
-	return result, nil
 }

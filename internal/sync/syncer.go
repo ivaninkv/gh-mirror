@@ -5,40 +5,36 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
-	"strings"
 
 	"gh-mirror/internal/config"
 	"gh-mirror/internal/git"
-	"gh-mirror/internal/github"
-	"gh-mirror/internal/gitverse"
 	"gh-mirror/pkg/models"
+	"gh-mirror/pkg/platform"
 )
 
 type Syncer struct {
-	ghClient     GitHubClient
-	gvClient     GitVerseClient
+	source       platform.Platform
+	destinations []platform.Platform
+	destUsers    map[models.PlatformID]string
 	cfg          *config.Config
 	logger       *slog.Logger
 	tempDir      string
-	githubUser   string
-	gitverseUser string
+	sourceUser   string
 }
 
-func NewSyncer(cfg *config.Config, logger *slog.Logger) (*Syncer, error) {
-	ghClient := github.NewClient(cfg.GitHub.Token)
-	gvClient := gitverse.NewClient(cfg.GitVerse.BaseURL, cfg.GitVerse.Token)
-
+func NewSyncer(source platform.Platform, destinations []platform.Platform, cfg *config.Config, logger *slog.Logger) (*Syncer, error) {
 	tempDir, err := os.MkdirTemp("", "gh-mirror-*")
 	if err != nil {
 		return nil, fmt.Errorf("create temp dir: %w", err)
 	}
 
 	return &Syncer{
-		ghClient: ghClient,
-		gvClient: gvClient,
-		cfg:      cfg,
-		logger:   logger,
-		tempDir:  tempDir,
+		source:       source,
+		destinations: destinations,
+		cfg:          cfg,
+		logger:       logger,
+		tempDir:      tempDir,
+		destUsers:    make(map[models.PlatformID]string),
 	}, nil
 }
 
@@ -48,70 +44,68 @@ func (s *Syncer) Close() error {
 
 func (s *Syncer) Init(ctx context.Context) error {
 	var err error
-	s.githubUser, err = s.getGitHubUsername(ctx)
+	s.sourceUser, err = s.source.GetAuthenticatedUser(ctx)
 	if err != nil {
-		return fmt.Errorf("get GitHub username: %w", err)
+		return fmt.Errorf("get source username: %w", err)
 	}
 
-	s.gitverseUser, err = s.gvClient.GetAuthenticatedUser(ctx)
-	if err != nil {
-		return fmt.Errorf("get GitVerse username: %w", err)
+	for _, dest := range s.destinations {
+		destUser, err := dest.GetAuthenticatedUser(ctx)
+		if err != nil {
+			return fmt.Errorf("get %s username: %w", dest.ID(), err)
+		}
+		s.destUsers[dest.ID()] = destUser
 	}
 
 	s.logger.Info("initialized",
-		"github_user", s.githubUser,
-		"gitverse_user", s.gitverseUser,
+		"source", s.source.ID(),
+		"source_user", s.sourceUser,
+		"destinations", s.destinationIDs(),
 	)
 
 	return nil
 }
 
-func (s *Syncer) getGitHubUsername(ctx context.Context) (string, error) {
-	repos, err := s.ghClient.ListRepositories(ctx)
-	if err != nil {
-		return "", err
+func (s *Syncer) destinationIDs() []models.PlatformID {
+	ids := make([]models.PlatformID, len(s.destinations))
+	for i, d := range s.destinations {
+		ids[i] = d.ID()
 	}
-	if len(repos) == 0 {
-		return "", fmt.Errorf("no repositories found")
-	}
-	parts := strings.Split(repos[0].FullName, "/")
-	return parts[0], nil
+	return ids
 }
 
 func (s *Syncer) SyncAll(ctx context.Context) ([]models.SyncResult, error) {
 	s.logger.Info("starting full sync")
 
-	githubRepos, err := s.ghClient.ListRepositories(ctx)
+	sourceRepos, err := s.source.ListRepositories(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list GitHub repositories: %w", err)
+		return nil, fmt.Errorf("list source repositories: %w", err)
 	}
 
-	gitverseRepos, err := s.gvClient.ListRepositories(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list GitVerse repositories: %w", err)
-	}
-
-	gitverseRepoMap := make(map[string]models.Repository)
-	for _, r := range gitverseRepos {
-		gitverseRepoMap[r.Name] = r
+	destRepoMaps := make(map[models.PlatformID]map[string]models.Repository)
+	for _, dest := range s.destinations {
+		destRepos, err := dest.ListRepositories(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list %s repositories: %w", dest.ID(), err)
+		}
+		repoMap := make(map[string]models.Repository)
+		for _, r := range destRepos {
+			repoMap[r.Name] = r
+		}
+		destRepoMaps[dest.ID()] = repoMap
 	}
 
 	var results []models.SyncResult
 
-	for _, ghRepo := range githubRepos {
-		result := s.syncRepository(ctx, ghRepo, gitverseRepoMap[ghRepo.Name])
-		results = append(results, result)
-	}
-
-	githubRepoNames := make(map[string]bool)
-	for _, r := range githubRepos {
-		githubRepoNames[r.Name] = true
-	}
-
-	var extraOnGitVerse []string
-	for _, gvRepo := range gitverseRepos {
-		if !githubRepoNames[gvRepo.Name] {
-			extraOnGitVerse = append(extraOnGitVerse, gvRepo.Name)
+	for _, srcRepo := range sourceRepos {
+		for _, dest := range s.destinations {
+			destRepoMap := destRepoMaps[dest.ID()]
+			var destRepo models.Repository
+			if existing, exists := destRepoMap[srcRepo.Name]; exists {
+				destRepo = existing
+			}
+			result := s.syncRepository(ctx, srcRepo, dest, destRepo)
+			results = append(results, result)
 		}
 	}
 
@@ -120,142 +114,166 @@ func (s *Syncer) SyncAll(ctx context.Context) ([]models.SyncResult, error) {
 		"created", countActions(results, models.ActionCreate),
 		"updated", countActions(results, models.ActionUpdate),
 		"skipped", countActions(results, models.ActionSkip),
-		"extra_on_gitverse", len(extraOnGitVerse),
 	)
 
-	if len(extraOnGitVerse) > 0 {
-		s.logger.Info("repositories on GitVerse not found on GitHub",
-			"repositories", extraOnGitVerse,
-		)
+	return results, nil
+}
+
+func (s *Syncer) SyncOne(ctx context.Context, repoName string) ([]models.SyncResult, error) {
+	srcRepo, err := s.source.GetRepository(ctx, s.sourceUser, repoName)
+	if err != nil {
+		return nil, fmt.Errorf("get source repository: %w", err)
+	}
+
+	var results []models.SyncResult
+
+	for _, dest := range s.destinations {
+		destUser := s.destUsers[dest.ID()]
+
+		exists, err := dest.RepositoryExists(ctx, destUser, repoName)
+		if err != nil {
+			results = append(results, models.SyncResult{
+				RepoName:    repoName,
+				Destination: dest.ID(),
+				Action:      models.ActionSkip,
+				Error:       err,
+				Message:     "failed to check repository",
+			})
+			continue
+		}
+
+		var destRepo models.Repository
+		if exists {
+			repo, err := dest.GetRepository(ctx, destUser, repoName)
+			if err != nil {
+				results = append(results, models.SyncResult{
+					RepoName:    repoName,
+					Destination: dest.ID(),
+					Action:      models.ActionSkip,
+					Error:       err,
+					Message:     "failed to get repository",
+				})
+				continue
+			}
+			destRepo = *repo
+		}
+
+		result := s.syncRepository(ctx, *srcRepo, dest, destRepo)
+		results = append(results, result)
 	}
 
 	return results, nil
 }
 
-func (s *Syncer) SyncOne(ctx context.Context, repoName string) (*models.SyncResult, error) {
-	ghRepo, err := s.ghClient.GetRepository(ctx, s.githubUser, repoName)
-	if err != nil {
-		return nil, fmt.Errorf("get GitHub repository: %w", err)
-	}
-
-	exists, err := s.gvClient.RepositoryExists(ctx, s.gitverseUser, repoName)
-	if err != nil {
-		return nil, fmt.Errorf("check GitVerse repository: %w", err)
-	}
-
-	var gvRepo models.Repository
-	if exists {
-		repo, err := s.gvClient.GetRepository(ctx, s.gitverseUser, repoName)
-		if err != nil {
-			return nil, fmt.Errorf("get GitVerse repository: %w", err)
-		}
-		if repo != nil {
-			gvRepo = *repo
-		}
-	}
-
-	result := s.syncRepository(ctx, *ghRepo, gvRepo)
-	return &result, nil
-}
-
-func (s *Syncer) syncRepository(ctx context.Context, ghRepo, gvRepo models.Repository) models.SyncResult {
+func (s *Syncer) syncRepository(ctx context.Context, srcRepo models.Repository, dest platform.Platform, destRepo models.Repository) models.SyncResult {
 	s.logger.Info("syncing repository",
-		"name", ghRepo.Name,
-		"private", ghRepo.Private,
+		"name", srcRepo.Name,
+		"source", s.source.ID(),
+		"destination", dest.ID(),
+		"private", srcRepo.Private,
 	)
 
 	action := models.ActionUpdate
-	if gvRepo.Name == "" {
+	if destRepo.Name == "" {
 		action = models.ActionCreate
 	}
 
 	if action == models.ActionUpdate {
-		s.logger.Info("checking refs for changes", "name", ghRepo.Name)
+		s.logger.Info("checking refs for changes", "name", srcRepo.Name)
 
-		githubRefs, err := s.getRemoteRefs(ghRepo, s.cfg.GitHub.Token, "github")
+		sourceRefs, err := s.getRemoteRefs(srcRepo, s.cfg.Platforms[string(s.source.ID())].Token, s.source)
 		if err != nil {
 			return models.SyncResult{
-				RepoName: ghRepo.Name,
-				Action:   action,
-				Error:    err,
-				Message:  "failed to get GitHub refs",
+				RepoName:    srcRepo.Name,
+				Destination: dest.ID(),
+				Action:      action,
+				Error:       err,
+				Message:     "failed to get source refs",
 			}
 		}
 
-		gitverseRefs, err := s.getRemoteRefs(ghRepo, s.cfg.GitVerse.Token, "gitverse")
+		destRefs, err := s.getRemoteRefs(srcRepo, s.cfg.Platforms[string(dest.ID())].Token, dest)
 		if err != nil {
 			return models.SyncResult{
-				RepoName: ghRepo.Name,
-				Action:   action,
-				Error:    err,
-				Message:  "failed to get GitVerse refs",
+				RepoName:    srcRepo.Name,
+				Destination: dest.ID(),
+				Action:      action,
+				Error:       err,
+				Message:     "failed to get destination refs",
 			}
 		}
 
-		inSync, reason := compareRefs(githubRefs, gitverseRefs)
+		inSync, reason := compareRefs(sourceRefs, destRefs)
 		if inSync {
-			s.logger.Info("repository already in sync", "name", ghRepo.Name)
+			s.logger.Info("repository already in sync", "name", srcRepo.Name)
 			return models.SyncResult{
-				RepoName: ghRepo.Name,
-				Action:   models.ActionSkip,
-				Message:  "already in sync",
+				RepoName:    srcRepo.Name,
+				Destination: dest.ID(),
+				Action:      models.ActionSkip,
+				Message:     "already in sync",
 			}
 		}
 
-		s.logger.Info("refs differ, will sync", "name", ghRepo.Name, "reason", reason)
+		s.logger.Info("refs differ, will sync", "name", srcRepo.Name, "reason", reason)
 	}
 
 	if action == models.ActionCreate {
-		_, err := s.gvClient.CreateRepository(ctx, ghRepo.Name, ghRepo.Private, ghRepo.Description)
+		_, err := dest.CreateRepository(ctx, srcRepo.Name, srcRepo.Private, srcRepo.Description)
 		if err != nil {
 			return models.SyncResult{
-				RepoName: ghRepo.Name,
-				Action:   action,
-				Error:    err,
-				Message:  "failed to create",
+				RepoName:    srcRepo.Name,
+				Destination: dest.ID(),
+				Action:      action,
+				Error:       err,
+				Message:     "failed to create",
 			}
 		}
-		s.logger.Info("created repository", "name", ghRepo.Name)
+		s.logger.Info("created repository", "name", srcRepo.Name, "destination", dest.ID())
 	} else {
-		if gvRepo.Private != ghRepo.Private || gvRepo.Description != ghRepo.Description {
-			if err := s.gvClient.UpdateRepository(ctx, s.gitverseUser, ghRepo.Name, ghRepo.Private, ghRepo.Description); err != nil {
+		destUser := s.destUsers[dest.ID()]
+		if destRepo.Private != srcRepo.Private || destRepo.Description != srcRepo.Description {
+			if err := dest.UpdateRepository(ctx, destUser, srcRepo.Name, srcRepo.Private, srcRepo.Description); err != nil {
 				return models.SyncResult{
-					RepoName: ghRepo.Name,
-					Action:   action,
-					Error:    err,
-					Message:  "failed to update",
+					RepoName:    srcRepo.Name,
+					Destination: dest.ID(),
+					Action:      action,
+					Error:       err,
+					Message:     "failed to update",
 				}
 			}
 			s.logger.Info("updated repository",
-				"name", ghRepo.Name,
-				"private", ghRepo.Private,
-				"description", ghRepo.Description,
+				"name", srcRepo.Name,
+				"destination", dest.ID(),
+				"private", srcRepo.Private,
+				"description", srcRepo.Description,
 			)
 		}
 	}
 
-	if err := s.pushMirror(ghRepo); err != nil {
+	if err := s.pushMirror(srcRepo, dest); err != nil {
 		return models.SyncResult{
-			RepoName: ghRepo.Name,
-			Action:   action,
-			Error:    err,
-			Message:  "failed to push mirror",
+			RepoName:    srcRepo.Name,
+			Destination: dest.ID(),
+			Action:      action,
+			Error:       err,
+			Message:     "failed to push mirror",
 		}
 	}
 
 	return models.SyncResult{
-		RepoName: ghRepo.Name,
-		Action:   action,
-		Message:  "synced successfully",
+		RepoName:    srcRepo.Name,
+		Destination: dest.ID(),
+		Action:      action,
+		Message:     "synced successfully",
 	}
 }
 
-func (s *Syncer) pushMirror(repo models.Repository) error {
+func (s *Syncer) pushMirror(repo models.Repository, dest platform.Platform) error {
 	repoPath := git.GetRepoPath(s.tempDir, repo.Name)
 
-	cloneURL := s.ghClient.CloneURLWithToken(repo, s.cfg.GitHub.Token)
+	cloneURL := s.source.CloneURL(repo, s.cfg.Platforms[string(s.source.ID())].Token)
 
-	repoHandle, err := git.Clone(cloneURL, repoPath, s.cfg.GitHub.Token)
+	repoHandle, err := git.Clone(cloneURL, repoPath, s.cfg.Platforms[string(s.source.ID())].Token)
 	if err != nil {
 		return fmt.Errorf("git clone: %w", err)
 	}
@@ -264,9 +282,9 @@ func (s *Syncer) pushMirror(repo models.Repository) error {
 		return fmt.Errorf("delete pull refs: %w", err)
 	}
 
-	pushURL := s.gvClient.CloneURL(repo, s.cfg.GitVerse.Token)
+	pushURL := dest.CloneURL(repo, s.cfg.Platforms[string(dest.ID())].Token)
 
-	if err := git.Push(repoHandle, "origin", pushURL, s.cfg.GitVerse.Token, true); err != nil {
+	if err := git.Push(repoHandle, "origin", pushURL, s.cfg.Platforms[string(dest.ID())].Token, true); err != nil {
 		return fmt.Errorf("git push mirror: %w", err)
 	}
 
@@ -274,93 +292,96 @@ func (s *Syncer) pushMirror(repo models.Repository) error {
 }
 
 func (s *Syncer) ListRepositories(ctx context.Context) ([]models.Repository, error) {
-	return s.ghClient.ListRepositories(ctx)
+	return s.source.ListRepositories(ctx)
 }
 
 func (s *Syncer) ListDiff(ctx context.Context) ([]models.DiffItem, error) {
-	githubRepos, err := s.ghClient.ListRepositories(ctx)
+	sourceRepos, err := s.source.ListRepositories(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list GitHub repositories: %w", err)
+		return nil, fmt.Errorf("list source repositories: %w", err)
 	}
 
-	gitverseRepos, err := s.gvClient.ListRepositories(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list GitVerse repositories: %w", err)
-	}
-
-	githubMap := make(map[string]models.Repository)
-	for _, r := range githubRepos {
-		githubMap[r.Name] = r
-	}
-
-	gitverseMap := make(map[string]models.Repository)
-	for _, r := range gitverseRepos {
-		gitverseMap[r.Name] = r
+	sourceMap := make(map[string]models.Repository)
+	for _, r := range sourceRepos {
+		sourceMap[r.Name] = r
 	}
 
 	var diff []models.DiffItem
 
-	for name, ghRepo := range githubMap {
-		gvRepo, exists := gitverseMap[name]
+	if len(s.destinations) == 0 {
+		return diff, nil
+	}
+
+	dest := s.destinations[0]
+	destUser := s.destUsers[dest.ID()]
+
+	destRepos, err := dest.ListRepositories(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list %s repositories: %w", dest.ID(), err)
+	}
+
+	destMap := make(map[string]models.Repository)
+	for _, r := range destRepos {
+		destMap[r.Name] = r
+	}
+
+	for name, srcRepo := range sourceMap {
+		destRepo, exists := destMap[name]
 		if !exists {
 			diff = append(diff, models.DiffItem{
 				Name:        name,
-				GitHub:      &ghRepo,
-				GitVerse:    nil,
-				Description: "missing on GitVerse",
+				Source:      &srcRepo,
+				Destination: nil,
+				Description: fmt.Sprintf("missing on %s", dest.ID()),
 			})
-		} else if ghRepo.Private != gvRepo.Private {
+		} else if srcRepo.Private != destRepo.Private {
 			diff = append(diff, models.DiffItem{
 				Name:        name,
-				GitHub:      &ghRepo,
-				GitVerse:    &gvRepo,
-				Description: fmt.Sprintf("visibility mismatch: GitHub=%v, GitVerse=%v", ghRepo.Private, gvRepo.Private),
+				Source:      &srcRepo,
+				Destination: &destRepo,
+				Description: fmt.Sprintf("visibility mismatch: %s=%v, %s=%v", s.source.ID(), srcRepo.Private, dest.ID(), destRepo.Private),
 			})
 		}
 	}
 
-	for name, gvRepo := range gitverseMap {
-		if _, exists := githubMap[name]; !exists {
+	for name, destRepo := range destMap {
+		if _, exists := sourceMap[name]; !exists {
 			diff = append(diff, models.DiffItem{
 				Name:        name,
-				GitHub:      nil,
-				GitVerse:    &gvRepo,
-				Description: "only on GitVerse",
+				Source:      nil,
+				Destination: &destRepo,
+				Description: fmt.Sprintf("only on %s", dest.ID()),
 			})
 		}
 	}
+
+	_ = destUser
 
 	return diff, nil
 }
 
-func (s *Syncer) getRemoteRefs(repo models.Repository, token string, remoteType string) (git.RefMap, error) {
-	var cloneURL string
-
-	if remoteType == "github" {
-		cloneURL = s.ghClient.CloneURLWithToken(repo, token)
-	} else {
-		cloneURL = s.gvClient.CloneURL(repo, token)
-	}
+func (s *Syncer) getRemoteRefs(repo models.Repository, token string, p platform.Platform) (git.RefMap, error) {
+	cloneURL := p.CloneURL(repo, token)
 
 	refs, err := git.ListRemote(cloneURL, token)
 	if err != nil {
-		return nil, fmt.Errorf("git ls-remote %s: %w", remoteType, err)
+		return nil, fmt.Errorf("git ls-remote %s: %w", p.ID(), err)
 	}
 
 	return refs, nil
 }
 
-func compareRefs(githubRefs, gitverseRefs git.RefMap) (bool, string) {
-	if len(githubRefs) != len(gitverseRefs) {
-		return false, fmt.Sprintf("ref count mismatch: GitHub=%d, GitVerse=%d", len(githubRefs), len(gitverseRefs))
+func compareRefs(sourceRefs, destRefs git.RefMap) (bool, string) {
+	if len(sourceRefs) != len(destRefs) {
+		return false, fmt.Sprintf("ref count mismatch: source=%d, dest=%d", len(sourceRefs), len(destRefs))
 	}
 
-	for ref, githubSHA := range githubRefs {
-		gitverseSHA, exists := gitverseRefs[ref]
+	for ref, sourceSHA := range sourceRefs {
+		destSHA, exists := destRefs[ref]
 		if !exists {
-			return false, fmt.Sprintf("ref %s missing on GitVerse", ref)
+			return false, fmt.Sprintf("ref %s missing on destination", ref)
 		}
-		if githubSHA != gitverseSHA {
+		if sourceSHA != destSHA {
 			return false, fmt.Sprintf("SHA mismatch for %s", ref)
 		}
 	}
