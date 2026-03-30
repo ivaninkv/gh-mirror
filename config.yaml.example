@@ -11,7 +11,3 @@ destinations:
 
 sync:
   timeout_minutes: 30
-
-cron:
-  enabled: false
-  interval_hours: 6
