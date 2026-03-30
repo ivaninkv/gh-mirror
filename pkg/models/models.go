@@ -30,8 +30,9 @@ type SyncResult struct {
 }
 
 type DiffItem struct {
-	Name        string
-	Source      *Repository
-	Destination *Repository
-	Description string
+	Name                 string
+	Source               *Repository
+	Destination          *Repository
+	DestinationPlatform  PlatformID
+	Description          string
 }

@@ -278,7 +278,7 @@ func runDiff(args []string, configPath string, logger *slog.Logger) error {
 		if d.Source != nil && d.Destination == nil {
 			fmt.Printf("[+] %s only on source: %s (private=%v)\n", d.Name, cfg.Source, d.Source.Private)
 		} else if d.Source == nil && d.Destination != nil {
-			fmt.Printf("[-] %s only on destination: %s (private=%v) - %s\n", d.Name, cfg.Destinations[0], d.Destination.Private, d.Description)
+			fmt.Printf("[-] %s only on destination: %s (private=%v) - %s\n", d.Name, d.DestinationPlatform, d.Destination.Private, d.Description)
 		} else {
 			fmt.Printf("[~] Mismatch: %s - %s\n", d.Name, d.Description)
 		}

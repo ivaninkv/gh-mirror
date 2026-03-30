@@ -313,45 +313,53 @@ func (s *Syncer) ListDiff(ctx context.Context) ([]models.DiffItem, error) {
 		return diff, nil
 	}
 
-	dest := s.destinations[0]
-
-	destRepos, err := dest.ListRepositories(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("list %s repositories: %w", dest.ID(), err)
-	}
-
-	destMap := make(map[string]models.Repository)
-	for _, r := range destRepos {
-		destMap[r.Name] = r
-	}
-
-	for name, srcRepo := range sourceMap {
-		destRepo, exists := destMap[name]
-		if !exists {
-			diff = append(diff, models.DiffItem{
-				Name:        name,
-				Source:      &srcRepo,
-				Destination: nil,
-				Description: fmt.Sprintf("missing on %s", dest.ID()),
-			})
-		} else if srcRepo.Private != destRepo.Private {
-			diff = append(diff, models.DiffItem{
-				Name:        name,
-				Source:      &srcRepo,
-				Destination: &destRepo,
-				Description: fmt.Sprintf("visibility mismatch: %s=%v, %s=%v", s.source.ID(), srcRepo.Private, dest.ID(), destRepo.Private),
-			})
+	destRepoMaps := make(map[models.PlatformID]map[string]models.Repository)
+	for _, dest := range s.destinations {
+		destRepos, err := dest.ListRepositories(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list %s repositories: %w", dest.ID(), err)
 		}
+		repoMap := make(map[string]models.Repository)
+		for _, r := range destRepos {
+			repoMap[r.Name] = r
+		}
+		destRepoMaps[dest.ID()] = repoMap
 	}
 
-	for name, destRepo := range destMap {
-		if _, exists := sourceMap[name]; !exists {
-			diff = append(diff, models.DiffItem{
-				Name:        name,
-				Source:      nil,
-				Destination: &destRepo,
-				Description: fmt.Sprintf("only on %s", dest.ID()),
-			})
+	for _, dest := range s.destinations {
+		destMap := destRepoMaps[dest.ID()]
+
+		for name, srcRepo := range sourceMap {
+			destRepo, exists := destMap[name]
+			if !exists {
+				diff = append(diff, models.DiffItem{
+					Name:                 name,
+					Source:               &srcRepo,
+					Destination:          nil,
+					DestinationPlatform:  dest.ID(),
+					Description:           fmt.Sprintf("missing on %s", dest.ID()),
+				})
+			} else if srcRepo.Private != destRepo.Private {
+				diff = append(diff, models.DiffItem{
+					Name:                 name,
+					Source:               &srcRepo,
+					Destination:          &destRepo,
+					DestinationPlatform:  dest.ID(),
+					Description:           fmt.Sprintf("visibility mismatch: %s=%v, %s=%v", s.source.ID(), srcRepo.Private, dest.ID(), destRepo.Private),
+				})
+			}
+		}
+
+		for name, destRepo := range destMap {
+			if _, exists := sourceMap[name]; !exists {
+				diff = append(diff, models.DiffItem{
+					Name:                 name,
+					Source:               nil,
+					Destination:          &destRepo,
+					DestinationPlatform:  dest.ID(),
+					Description:          fmt.Sprintf("only on %s", dest.ID()),
+				})
+			}
 		}
 	}
 
