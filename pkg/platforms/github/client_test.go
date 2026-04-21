@@ -5,8 +5,15 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/nalgeon/be"
 
 	gh "github.com/google/go-github/v67/github"
@@ -267,6 +274,67 @@ func TestCleanPullRefsInvalidPath(t *testing.T) {
 	client := &Client{}
 	err := client.CleanPullRefs("/invalid/path/that/cannot/be/opened")
 	be.True(t, err != nil)
+}
+
+func TestCleanPullRefsRemovesPullRefs(t *testing.T) {
+	tmpDir := t.TempDir()
+	repoPath := tmpDir
+
+	repo, err := git.PlainInit(repoPath, false)
+	be.True(t, err == nil)
+
+	_, err = repo.CreateRemote(&config.RemoteConfig{
+		Name: "origin",
+		URLs: []string{"https://github.com/user/repo.git"},
+	})
+	be.True(t, err == nil)
+
+	wt, err := repo.Worktree()
+	be.True(t, err == nil)
+
+	err = os.WriteFile(filepath.Join(repoPath, "README.md"), []byte("test"), 0644)
+	be.True(t, err == nil)
+	_, err = wt.Add("README.md")
+	be.True(t, err == nil)
+	_, err = wt.Commit("initial", &git.CommitOptions{
+		Author: &object.Signature{Name: "Test", Email: "test@test.com"},
+	})
+	be.True(t, err == nil)
+
+	err = repo.Storer.SetReference(plumbing.NewHashReference("refs/heads/main", plumbing.NewHash("abc123def456abc123def456abc123def456abcd")))
+	be.True(t, err == nil)
+	err = repo.Storer.SetReference(plumbing.NewHashReference("refs/pull/1/head", plumbing.NewHash("def456abc123def456abc123def456abc123def4")))
+	be.True(t, err == nil)
+	err = repo.Storer.SetReference(plumbing.NewHashReference("refs/pull/2/head", plumbing.NewHash("123456789abc123456789abc123456789abc1234")))
+	be.True(t, err == nil)
+
+	client := &Client{}
+	err = client.CleanPullRefs(repoPath)
+	be.True(t, err == nil)
+
+	refs, err := repo.References()
+	be.True(t, err == nil)
+
+	pullRefCount := 0
+	refs.ForEach(func(ref *plumbing.Reference) error {
+		if strings.HasPrefix(ref.Name().String(), "refs/pull/") {
+			pullRefCount++
+		}
+		return nil
+	})
+	be.Equal(t, pullRefCount, 0)
+}
+
+func TestCleanPullRefsNoPullRefs(t *testing.T) {
+	tmpDir := t.TempDir()
+	repoPath := tmpDir
+
+	_, err := git.PlainInit(repoPath, false)
+	be.True(t, err == nil)
+
+	client := &Client{}
+	err = client.CleanPullRefs(repoPath)
+	be.True(t, err == nil)
 }
 
 func newClientWithServer(server *httptest.Server) *Client {

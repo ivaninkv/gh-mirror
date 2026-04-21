@@ -1,11 +1,29 @@
 package platform
 
 import (
+	"context"
 	"errors"
 	"testing"
 
 	"github.com/nalgeon/be"
+	"gh-mirror/pkg/models"
 )
+
+type testPlatform struct {
+	id models.PlatformID
+}
+
+func (t *testPlatform) ID() models.PlatformID                                                    { return t.id }
+func (t *testPlatform) Name() string                                                              { return "test" }
+func (t *testPlatform) Configure(token string, apiURL string, webURL string) error                { return nil }
+func (t *testPlatform) GetAuthenticatedUser(ctx context.Context) (string, error)                  { return "", nil }
+func (t *testPlatform) ListRepositories(ctx context.Context) ([]models.Repository, error)         { return nil, nil }
+func (t *testPlatform) GetRepository(ctx context.Context, owner string, repo string) (*models.Repository, error) { return nil, nil }
+func (t *testPlatform) CreateRepository(ctx context.Context, name string, private bool, description string) (*models.Repository, error) { return nil, nil }
+func (t *testPlatform) UpdateRepository(ctx context.Context, owner string, repo string, private bool, description string) error { return nil }
+func (t *testPlatform) RepositoryExists(ctx context.Context, owner string, repo string) (bool, error) { return false, nil }
+func (t *testPlatform) CloneURL(repo models.Repository, token string) string                     { return "" }
+func (t *testPlatform) CleanPullRefs(repoPath string) error                                        { return nil }
 
 func TestCreateNonexistent(t *testing.T) {
 	p, err := Create("nonexistent")
@@ -59,6 +77,41 @@ func TestPlatformErrorMessageWithEmptyCode(t *testing.T) {
 func TestPlatformErrorMessageWithEmptyMessage(t *testing.T) {
 	err := &PlatformError{Code: "CODE_ONLY", Message: ""}
 	be.Equal(t, err.Error(), "CODE_ONLY: ")
+}
+
+func TestRegisterAndCreate(t *testing.T) {
+	testID := models.PlatformID("test-platform-for-register")
+	cleanup := func() { delete(globalRegistry, testID) }
+
+	Register(testID, func() Platform {
+		return &testPlatform{id: testID}
+	})
+	defer cleanup()
+
+	p, err := Create(testID)
+	be.True(t, err == nil)
+	be.True(t, p != nil)
+	be.Equal(t, p.ID(), testID)
+}
+
+func TestRegisteredIDsAfterRegister(t *testing.T) {
+	testID := models.PlatformID("test-platform-for-ids")
+	cleanup := func() { delete(globalRegistry, testID) }
+
+	Register(testID, func() Platform {
+		return &testPlatform{id: testID}
+	})
+	defer cleanup()
+
+	ids := RegisteredIDs()
+	found := false
+	for _, id := range ids {
+		if id == testID {
+			found = true
+			break
+		}
+	}
+	be.True(t, found)
 }
 
 func BenchmarkCreateNonexistent(b *testing.B) {

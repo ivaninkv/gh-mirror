@@ -428,3 +428,70 @@ func TestListRepositoriesError(t *testing.T) {
 	_, err = s.ListRepositories(context.Background())
 	be.True(t, err != nil)
 }
+
+func TestSyncOneRepoExistsError(t *testing.T) {
+	src := newSourceMock()
+	src.getAuthUserFunc = func(_ context.Context) (string, error) { return "srcuser", nil }
+	src.getRepoFunc = func(_ context.Context, _, _ string) (*models.Repository, error) {
+		return &models.Repository{Name: "repo1", Private: false}, nil
+	}
+
+	dest := newDestMock("gitlab")
+	dest.getAuthUserFunc = func(_ context.Context) (string, error) { return "destuser", nil }
+	dest.repoExistsFunc = func(_ context.Context, _, _ string) (bool, error) {
+		return false, platform.ErrNotAuthenticated
+	}
+
+	s, err := NewSyncer(src, []platform.Platform{dest}, testConfig(), slog.Default())
+	be.True(t, err == nil)
+	defer s.Close()
+
+	err = s.Init(context.Background())
+	be.True(t, err == nil)
+
+	results, err := s.SyncOne(context.Background(), "repo1")
+	be.True(t, err == nil)
+	be.Equal(t, len(results), 1)
+	be.Equal(t, results[0].Action, models.ActionSkip)
+	be.True(t, results[0].Error != nil)
+}
+
+func TestSyncOneGetRepoError(t *testing.T) {
+	src := newSourceMock()
+	src.getAuthUserFunc = func(_ context.Context) (string, error) { return "srcuser", nil }
+	src.getRepoFunc = func(_ context.Context, _, _ string) (*models.Repository, error) {
+		return nil, platform.ErrRepositoryNotFound
+	}
+
+	s, err := NewSyncer(src, []platform.Platform{newDestMock("gitlab")}, testConfig(), slog.Default())
+	be.True(t, err == nil)
+	defer s.Close()
+
+	_, err = s.SyncOne(context.Background(), "nonexistent-repo")
+	be.True(t, err != nil)
+}
+
+func TestSyncAllWithRepos(t *testing.T) {
+	src := newSourceMock()
+	src.listReposFunc = func(_ context.Context) ([]models.Repository, error) {
+		return []models.Repository{
+			{Name: "repo1", Private: false},
+			{Name: "repo2", Private: true},
+		}, nil
+	}
+
+	dest := newDestMock("gitlab")
+	dest.listReposFunc = func(_ context.Context) ([]models.Repository, error) {
+		return []models.Repository{}, nil
+	}
+
+	s, err := NewSyncer(src, []platform.Platform{dest}, testConfig(), slog.Default())
+	be.True(t, err == nil)
+	defer s.Close()
+
+	results, err := s.SyncAll(context.Background())
+	be.True(t, err == nil)
+	be.Equal(t, len(results), 2)
+	be.Equal(t, results[0].RepoName, "repo1")
+	be.Equal(t, results[1].RepoName, "repo2")
+}
