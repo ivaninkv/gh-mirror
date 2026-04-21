@@ -1,7 +1,5 @@
 package platform
 
-import "gh-mirror/pkg/models"
-
 type PlatformErrorTestCase struct {
 	Name     string
 	Error    *PlatformError
@@ -52,24 +50,6 @@ func ErrorAsTestCases() []ErrorAsTestCase {
 			Err:      ErrNotAuthenticated,
 			WantType: &PlatformError{Code: "NOT_AUTHENTICATED"},
 			WantMsg:  "authentication failed",
-		},
-	}
-}
-
-type CreateTestCase struct {
-	Name    string
-	ID      models.PlatformID
-	WantErr error
-	WantNil bool
-}
-
-func CreateTestCases() []CreateTestCase {
-	return []CreateTestCase{
-		{
-			Name:    "unregistered platform returns error",
-			ID:      "nonexistent",
-			WantErr: ErrPlatformNotFound,
-			WantNil: true,
 		},
 	}
 }

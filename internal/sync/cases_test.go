@@ -18,11 +18,7 @@ type CountActionsTestCase struct {
 	WantCount int
 }
 
-type DestinationIDsTestCase struct {
-	Name      string
-	IDs       []models.PlatformID
-	WantLen   int
-}
+
 
 func CompareRefsTestCases() []CompareRefsTestCase {
 	return []CompareRefsTestCase{
@@ -126,14 +122,6 @@ func CountActionsTestCases() []CountActionsTestCase {
 			Action:    models.ActionCreate,
 			WantCount: 0,
 		},
-	}
-}
-
-func DestinationIDsTestCases() []DestinationIDsTestCase {
-	return []DestinationIDsTestCase{
-		{Name: "two destinations", IDs: []models.PlatformID{"gitlab", "gitverse"}, WantLen: 2},
-		{Name: "one destination", IDs: []models.PlatformID{"codeberg"}, WantLen: 1},
-		{Name: "no destinations", IDs: []models.PlatformID{}, WantLen: 0},
 	}
 }
 

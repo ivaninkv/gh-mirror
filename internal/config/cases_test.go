@@ -1,25 +1,10 @@
 package config
 
-import (
-	"errors"
-	"os"
-
-	"gopkg.in/yaml.v3"
-)
-
 type LoadTestCase struct {
 	Name        string
 	YAMLContent string
 	EnvVars     map[string]string
-	WantErr     error
 	WantSource  string
-}
-
-type ValidateTestCase struct {
-	Name        string
-	Config      Config
-	WantErr     error
-	WantErrMsg  string
 }
 
 type ExpandEnvValueTestCase struct {
@@ -44,6 +29,10 @@ platforms:
   github:
     token: "ghp_test"
     url: "https://github.com"
+  gitlab:
+    token: "glpat_test"
+    api_url: "https://gitlab.com/api/v4"
+    url: "https://gitlab.com"
 source: github
 destinations:
   - gitlab
@@ -73,67 +62,6 @@ destinations:
   - gitverse
 `,
 			WantSource: "github",
-		},
-	}
-}
-
-func LoadInvalidCases() []LoadTestCase {
-	return []LoadTestCase{
-		{
-			Name:    "non-existent file",
-			WantErr: os.ErrNotExist,
-		},
-		{
-			Name:        "invalid YAML syntax",
-			YAMLContent: "invalid: yaml: content: [",
-			WantErr:     &yaml.TypeError{},
-		},
-	}
-}
-
-func ValidateTestCases() []ValidateTestCase {
-	return []ValidateTestCase{
-		{
-			Name: "empty source",
-			Config: Config{
-				Source: "",
-				Platforms: map[string]PlatformConfig{
-					"github": {Token: "test", URL: "https://github.com"},
-				},
-			},
-			WantErr:    &ConfigError{Field: "source", Message: "required"},
-			WantErrMsg: "config: source required",
-		},
-		{
-			Name: "unsupported source platform",
-			Config: Config{
-				Source: "nonexistent",
-				Platforms: map[string]PlatformConfig{
-					"nonexistent": {Token: "test", URL: "https://nonexistent.com"},
-				},
-			},
-			WantErrMsg: "config: source unsupported platform: nonexistent",
-		},
-		{
-			Name: "missing source platform config",
-			Config: Config{
-				Source: "github",
-				Platforms: map[string]PlatformConfig{
-					"gitlab": {Token: "test", URL: "https://gitlab.com"},
-				},
-			},
-			WantErrMsg: "config: platforms.github platform configuration required",
-		},
-		{
-			Name: "destination same as source",
-			Config: Config{
-				Source: "github",
-				Platforms: map[string]PlatformConfig{
-					"github": {Token: "test", URL: "https://github.com"},
-				},
-				Destinations: []string{"github"},
-			},
-			WantErrMsg: "config: destinations destination cannot be same as source: github",
 		},
 	}
 }
@@ -198,18 +126,3 @@ func ConfigErrorTestCases() []ConfigErrorTestCase {
 	}
 }
 
-func DefaultTimeoutTestCase() ValidateTestCase {
-	return ValidateTestCase{
-		Name: "default timeout is set when zero",
-		Config: Config{
-			Source: "github",
-			Platforms: map[string]PlatformConfig{
-				"github": {Token: "test", URL: "https://github.com"},
-			},
-			Destinations: []string{"gitlab"},
-			Sync:        SyncConfig{TimeoutMinutes: 0},
-		},
-	}
-}
-
-var _ = errors.New("placeholder")

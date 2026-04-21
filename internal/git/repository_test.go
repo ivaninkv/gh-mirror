@@ -5,40 +5,63 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/nalgeon/be"
 )
 
-func TestGetRepoPath(t *testing.T) {
-	for _, tc := range GetRepoPathTestCases() {
-		t.Run(tc.Name, func(t *testing.T) {
-			got := GetRepoPath(tc.TempDir, tc.RepoName)
-			be.Equal(t, got, tc.Want)
-		})
-	}
+func TestCloneNonExistentRemote(t *testing.T) {
+	tmpDir := t.TempDir()
+	repoPath := filepath.Join(tmpDir, "test-clone")
+
+	_, err := Clone("https://nonexistent.invalid/repo.git", repoPath, "fake-token")
+	be.True(t, err != nil)
 }
 
-func TestGetRepoPathPreservesPathSeparators(t *testing.T) {
-	result := GetRepoPath("/base", "user/repo")
-	be.Equal(t, filepath.Base(result), "repo")
-	be.Equal(t, filepath.Dir(result), "/base/user")
+func TestPushToNonExistentRemote(t *testing.T) {
+	repo, err := initTestRepo(t)
+	be.True(t, err == nil)
+
+	err = Push(repo, "origin", "https://nonexistent.invalid/repo.git", "fake-token", true)
+	be.True(t, err != nil)
 }
 
-func TestGetRepoPathHandlesSpecialCharacters(t *testing.T) {
-	result := GetRepoPath("/tmp", "repo-with-dashes")
-	be.Equal(t, result, "/tmp/repo-with-dashes")
+func TestSetRemoteURLCreateNew(t *testing.T) {
+	repo, err := initTestRepo(t)
+	be.True(t, err == nil)
+
+	err = SetRemoteURL(repo, "upstream", "https://example.com/repo.git", "token")
+	be.True(t, err == nil)
+
+	remote, rErr := repo.Remote("upstream")
+	be.True(t, rErr == nil)
+	be.Equal(t, remote.Config().URLs[0], "https://example.com/repo.git")
 }
 
-func TestGetRepoPathHandlesDots(t *testing.T) {
-	result := GetRepoPath("/tmp", "...")
-	be.Equal(t, result, "/tmp/...")
+func TestSetRemoteURLUpdateExisting(t *testing.T) {
+	repo, err := initTestRepo(t)
+	be.True(t, err == nil)
+
+	err = SetRemoteURL(repo, "origin", "https://new-url.example.com/repo.git", "token")
+	be.True(t, err == nil)
+
+	remote, rErr := repo.Remote("origin")
+	be.True(t, rErr == nil)
+	be.Equal(t, remote.Config().URLs[0], "https://new-url.example.com/repo.git")
 }
 
-func TestCleanupRepoPathNonExistent(t *testing.T) {
-	err := CleanupRepoPath("/nonexistent/path/12345")
+func TestListRemoteNonExistentURL(t *testing.T) {
+	_, err := ListRemote("https://nonexistent.invalid/repo.git", "fake-token")
+	be.True(t, err != nil)
+}
+
+func TestCleanupRepoPathNonExistentDir(t *testing.T) {
+	err := CleanupRepoPath("/tmp/gh-mirror-test-nonexistent-dir-12345")
 	be.Equal(t, err, nil)
 }
 
-func TestCleanupRepoPathExisting(t *testing.T) {
+func TestCleanupRepoPathExistingDir(t *testing.T) {
 	tmpDir := t.TempDir()
 	repoPath := filepath.Join(tmpDir, "test-repo")
 
@@ -69,46 +92,71 @@ func TestCleanupRepoPathFile(t *testing.T) {
 	be.True(t, os.IsNotExist(statErr))
 }
 
-func TestPathJoinBehavior(t *testing.T) {
-	for _, tc := range PathJoinTestCases() {
-		t.Run(tc.Name, func(t *testing.T) {
-			result := filepath.Join(tc.Parts...)
-			be.Equal(t, len(result), tc.WantLen)
-		})
-	}
+func TestGetRepoPathSimple(t *testing.T) {
+	result := GetRepoPath("/tmp/gh-mirror", "my-repo")
+	be.Equal(t, result, "/tmp/gh-mirror/my-repo")
 }
 
-func BenchmarkGetRepoPath(b *testing.B) {
-	cases := GetRepoPathTestCases()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		for _, tc := range cases {
-			_ = GetRepoPath(tc.TempDir, tc.RepoName)
-		}
-	}
+func TestGetRepoPathNested(t *testing.T) {
+	result := GetRepoPath("/tmp/gh-mirror/nested", "another-repo")
+	be.Equal(t, result, "/tmp/gh-mirror/nested/another-repo")
 }
 
-func BenchmarkCleanupRepoPath(b *testing.B) {
-	tmpDir := b.TempDir()
-	paths := make([]string, 10)
-	for i := 0; i < 10; i++ {
-		p := filepath.Join(tmpDir, "repo"+string(rune('0'+i)))
-		os.MkdirAll(p, 0755)
-		paths[i] = p
-	}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		for _, p := range paths {
-			CleanupRepoPath(p)
-			os.MkdirAll(p, 0755)
-		}
-	}
+func TestGetRepoPathEmptyName(t *testing.T) {
+	result := GetRepoPath("/tmp/gh-mirror", "")
+	be.Equal(t, result, "/tmp/gh-mirror")
 }
 
-func BenchmarkPathJoin(b *testing.B) {
-	parts := []string{"/tmp", "gh-mirror", "repo"}
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		_ = filepath.Join(parts...)
+func TestGetRepoPathWithPathSeparator(t *testing.T) {
+	result := GetRepoPath("/tmp", "user/repo")
+	be.Equal(t, result, "/tmp/user/repo")
+}
+
+func initTestRepo(t *testing.T) (*git.Repository, error) {
+	t.Helper()
+	tmpDir := t.TempDir()
+	repo, err := git.PlainInit(tmpDir, false)
+	if err != nil {
+		return nil, err
 	}
+
+	wt, err := repo.Worktree()
+	if err != nil {
+		return nil, err
+	}
+
+	filePath := filepath.Join(tmpDir, "README.md")
+	if err := os.WriteFile(filePath, []byte("# Test Repo\n"), 0644); err != nil {
+		return nil, err
+	}
+
+	_, err = wt.Add("README.md")
+	if err != nil {
+		return nil, err
+	}
+
+	commit, err := wt.Commit("initial commit", &git.CommitOptions{
+		Author: &object.Signature{
+			Name:  "Test",
+			Email: "test@example.com",
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	branchRef := plumbing.NewHashReference("refs/heads/main", commit)
+	if err := repo.Storer.SetReference(branchRef); err != nil {
+		return nil, err
+	}
+
+	if err := repo.Storer.SetReference(branchRef); err != nil {
+		return nil, err
+	}
+
+	wt.Checkout(&git.CheckoutOptions{
+		Branch: plumbing.ReferenceName("refs/heads/main"),
+	})
+
+	return repo, nil
 }

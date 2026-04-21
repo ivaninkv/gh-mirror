@@ -2,6 +2,7 @@ package gitlab
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -151,6 +152,78 @@ func TestRepositoryExists(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestCreateRepository(t *testing.T) {
+	for _, tc := range CreateRepositoryTestCases() {
+		t.Run(tc.Name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				be.Equal(t, r.Method, "POST")
+				be.Equal(t, r.URL.Path, "/projects")
+				w.WriteHeader(tc.ResponseCode)
+				if tc.ResponseBody != nil {
+					var respBody []byte
+					if errResp, ok := tc.ResponseBody.(APIErrorResponse); ok {
+						respBody = MockErrorResponse(errResp.Message)
+					} else if repo, ok := tc.ResponseBody.(RepositoryResponse); ok {
+						respBody = MockRepositoryResponse(repo)
+					}
+					w.Write(respBody)
+				}
+			}))
+			defer server.Close()
+
+			client := &Client{
+				apiURL:     server.URL,
+				webURL:     "https://gitlab.com",
+				httpClient: &http.Client{},
+			}
+
+			repo, err := client.CreateRepository(context.Background(), "new-repo", false, "A new repo")
+
+			if tc.WantErr {
+				be.True(t, err != nil)
+			} else {
+				be.Equal(t, err, nil)
+				be.Equal(t, repo.Name, tc.WantRepoName)
+			}
+		})
+	}
+}
+
+func TestUpdateRepository(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		be.Equal(t, r.Method, "PUT")
+		be.True(t, len(r.URL.Path) > 0)
+		w.WriteHeader(200)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		apiURL:     server.URL,
+		webURL:     "https://gitlab.com",
+		httpClient: &http.Client{},
+	}
+
+	err := client.UpdateRepository(context.Background(), "user", "myrepo", true, "Updated description")
+	be.Equal(t, err, nil)
+}
+
+func TestUpdateRepositoryError(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		fmt.Fprint(w, `{"message":"404 Project Not Found"}`)
+	}))
+	defer server.Close()
+
+	client := &Client{
+		apiURL:     server.URL,
+		webURL:     "https://gitlab.com",
+		httpClient: &http.Client{},
+	}
+
+	err := client.UpdateRepository(context.Background(), "user", "nonexistent", false, "")
+	be.True(t, err != nil)
 }
 
 func TestCloneURL(t *testing.T) {
