@@ -270,3 +270,7 @@ func (c *Client) RepositoryExists(ctx context.Context, owner, repo string) (bool
 func (c *Client) CloneURL(repo models.Repository, token string) string {
 	return fmt.Sprintf("%s/%s.git", c.webURL, repo.FullName)
 }
+
+func (c *Client) CleanPullRefs(repoPath string) error {
+	return nil
+}

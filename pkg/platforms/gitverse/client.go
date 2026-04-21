@@ -260,3 +260,7 @@ func (c *Client) CloneURL(repo models.Repository, token string) string {
 	host := strings.TrimPrefix(c.webURL, "https://")
 	return fmt.Sprintf("https://%s@%s/%s.git", token, host, repo.FullName)
 }
+
+func (c *Client) CleanPullRefs(repoPath string) error {
+	return nil
+}

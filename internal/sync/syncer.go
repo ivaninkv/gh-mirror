@@ -10,7 +10,6 @@ import (
 	"gh-mirror/internal/git"
 	"gh-mirror/pkg/models"
 	"gh-mirror/pkg/platform"
-	"gh-mirror/pkg/platforms/github"
 )
 
 type Syncer struct {
@@ -279,7 +278,7 @@ func (s *Syncer) pushMirror(repo models.Repository, dest platform.Platform) erro
 		return fmt.Errorf("git clone: %w", err)
 	}
 
-	if err := github.DeletePullRefs(repoPath); err != nil {
+	if err := s.source.CleanPullRefs(repoPath); err != nil {
 		return fmt.Errorf("delete pull refs: %w", err)
 	}
 

@@ -160,7 +160,7 @@ func (c *Client) CloneURL(repo models.Repository, token string) string {
 	return fmt.Sprintf("https://%s@%s/%s.git", token, host, repo.FullName)
 }
 
-func DeletePullRefs(repoPath string) error {
+func (c *Client) CleanPullRefs(repoPath string) error {
 	r, err := git.PlainOpen(repoPath)
 	if err != nil {
 		return fmt.Errorf("open repo: %w", err)

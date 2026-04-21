@@ -17,4 +17,5 @@ type Platform interface {
 	UpdateRepository(ctx context.Context, owner, repo string, private bool, description string) error
 	RepositoryExists(ctx context.Context, owner, repo string) (bool, error)
 	CloneURL(repo models.Repository, token string) string
+	CleanPullRefs(repoPath string) error
 }
