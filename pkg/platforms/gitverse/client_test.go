@@ -219,7 +219,7 @@ func TestCloneURL(t *testing.T) {
 	repo := models.Repository{FullName: "user/repo"}
 
 	url := client.CloneURL(repo, "token")
-	be.Equal(t, url, "https://token@gitverse.ru/user/repo.git")
+	be.Equal(t, url, "https://gitverse.ru/user/repo.git")
 }
 
 func TestCleanPullRefs(t *testing.T) {

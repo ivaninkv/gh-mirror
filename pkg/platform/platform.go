@@ -1,3 +1,5 @@
+// Package platform defines the abstraction for Git hosting platforms
+// and the registry that maps platform IDs to their implementations.
 package platform
 
 import (
@@ -5,6 +7,7 @@ import (
 	"gh-mirror/pkg/models"
 )
 
+// Platform is the interface that every supported Git hosting platform must implement.
 type Platform interface {
 	ID() models.PlatformID
 	Name() string
@@ -16,6 +19,14 @@ type Platform interface {
 	CreateRepository(ctx context.Context, name string, private bool, description string) (*models.Repository, error)
 	UpdateRepository(ctx context.Context, owner, repo string, private bool, description string) error
 	RepositoryExists(ctx context.Context, owner, repo string) (bool, error)
+
+	// CloneURL builds a clone/push URL for the given repository.
+	// The token parameter is passed for platforms that embed credentials in the URL;
+	// authentication via http.BasicAuth is preferred.
 	CloneURL(repo models.Repository, token string) string
+
+	// CleanPullRefs removes pull-request references (refs/pull/*) from a cloned
+	// repository before pushing, as they are platform-specific and should not be
+	// mirrored.
 	CleanPullRefs(repoPath string) error
 }

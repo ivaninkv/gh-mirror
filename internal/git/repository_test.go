@@ -150,13 +150,11 @@ func initTestRepo(t *testing.T) (*git.Repository, error) {
 		return nil, err
 	}
 
-	if err := repo.Storer.SetReference(branchRef); err != nil {
+	if err := wt.Checkout(&git.CheckoutOptions{
+		Branch: plumbing.ReferenceName("refs/heads/main"),
+	}); err != nil {
 		return nil, err
 	}
-
-	wt.Checkout(&git.CheckoutOptions{
-		Branch: plumbing.ReferenceName("refs/heads/main"),
-	})
 
 	return repo, nil
 }

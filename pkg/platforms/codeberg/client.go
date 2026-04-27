@@ -48,42 +48,83 @@ func (c *Client) Configure(token string, apiURL string, webURL string) error {
 }
 
 func (c *Client) doRequest(ctx context.Context, method, path string, body interface{}) ([]byte, error) {
-	var reqBody io.Reader
+	var bodyBytes []byte
 	if body != nil {
-		jsonData, err := json.Marshal(body)
+		var err error
+		bodyBytes, err = json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("marshal request body: %w", err)
 		}
-		reqBody = bytes.NewReader(jsonData)
 	}
 
-	req, err := http.NewRequest(method, c.apiURL+path, reqBody)
-	if err != nil {
-		return nil, fmt.Errorf("create request: %w", err)
-	}
+	const maxRetries = 3
+	var lastErr error
 
-	req.Header.Set("Authorization", "token "+c.token)
-	req.Header.Set("Content-Type", "application/json")
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		if attempt > 0 {
+			backoff := time.Duration(1<<uint(attempt)) * time.Second
+			if backoff > 10*time.Second {
+				backoff = 10 * time.Second
+			}
+			select {
+			case <-ctx.Done():
+				return nil, ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
 
-	resp, err := c.httpClient.Do(req.WithContext(ctx))
-	if err != nil {
-		return nil, fmt.Errorf("execute request: %w", err)
-	}
-	defer resp.Body.Close()
+		var reqBody io.Reader
+		if bodyBytes != nil {
+			reqBody = bytes.NewReader(bodyBytes)
+		}
 
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("read response body: %w", err)
-	}
+		req, err := http.NewRequest(method, c.apiURL+path, reqBody)
+		if err != nil {
+			return nil, fmt.Errorf("create request: %w", err)
+		}
 
-	if resp.StatusCode >= 400 {
-		return nil, &APIError{
+		req.Header.Set("Authorization", "token "+c.token)
+		req.Header.Set("Content-Type", "application/json")
+
+		resp, err := c.httpClient.Do(req.WithContext(ctx))
+		if err != nil {
+			lastErr = fmt.Errorf("execute request: %w", err)
+			continue
+		}
+
+		respBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = fmt.Errorf("read response body: %w", err)
+			continue
+		}
+
+		if resp.StatusCode < 400 {
+			return respBody, nil
+		}
+
+		if resp.StatusCode < 500 && resp.StatusCode != 429 {
+			return nil, &APIError{
+				StatusCode: resp.StatusCode,
+				Message:    truncateBody(respBody),
+			}
+		}
+
+		lastErr = &APIError{
 			StatusCode: resp.StatusCode,
-			Message:    string(respBody),
+			Message:    truncateBody(respBody),
 		}
 	}
 
-	return respBody, nil
+	return nil, fmt.Errorf("request failed after %d retries: %w", maxRetries, lastErr)
+}
+
+func truncateBody(body []byte) string {
+	msg := string(body)
+	if len(msg) > 1024 {
+		msg = msg[:1024]
+	}
+	return msg
 }
 
 type APIError struct {

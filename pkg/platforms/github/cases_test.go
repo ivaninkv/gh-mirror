@@ -15,14 +15,14 @@ func GHCloneURLTestCases() []GHCloneURLTestCase {
 			WebURL:   "https://github.com",
 			FullName: "user/repo",
 			Token:    "ghp_token",
-			WantURL:  "https://ghp_token@github.com/user/repo.git",
+			WantURL:  "https://github.com/user/repo.git",
 		},
 		{
 			Name:     "custom github enterprise clone URL",
 			WebURL:   "https://github.mycompany.com",
 			FullName: "user/repo",
 			Token:    "token",
-			WantURL:  "https://token@github.mycompany.com/user/repo.git",
+			WantURL:  "https://github.mycompany.com/user/repo.git",
 		},
 	}
 }

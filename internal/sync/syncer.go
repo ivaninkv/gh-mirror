@@ -1,3 +1,4 @@
+// Package sync implements the core repository mirroring logic between platforms.
 package sync
 
 import (
@@ -5,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"path/filepath"
 
 	"gh-mirror/internal/config"
 	"gh-mirror/internal/git"
@@ -12,6 +14,7 @@ import (
 	"gh-mirror/pkg/platform"
 )
 
+// Syncer orchestrates repository mirroring from a source platform to one or more destinations.
 type Syncer struct {
 	source       platform.Platform
 	destinations []platform.Platform
@@ -22,6 +25,7 @@ type Syncer struct {
 	sourceUser   string
 }
 
+// NewSyncer creates a new Syncer and initializes its temporary working directory.
 func NewSyncer(source platform.Platform, destinations []platform.Platform, cfg *config.Config, logger *slog.Logger) (*Syncer, error) {
 	tempDir, err := os.MkdirTemp("", "gh-mirror-*")
 	if err != nil {
@@ -38,10 +42,13 @@ func NewSyncer(source platform.Platform, destinations []platform.Platform, cfg *
 	}, nil
 }
 
+// Close removes the temporary working directory. Should be called when the Syncer is no longer needed.
 func (s *Syncer) Close() error {
 	return os.RemoveAll(s.tempDir)
 }
 
+// Init authenticates with all platforms and resolves usernames.
+// Must be called before SyncAll, SyncOne, ListRepositories, or ListDiff.
 func (s *Syncer) Init(ctx context.Context) error {
 	var err error
 	s.sourceUser, err = s.source.GetAuthenticatedUser(ctx)
@@ -74,6 +81,7 @@ func (s *Syncer) destinationIDs() []models.PlatformID {
 	return ids
 }
 
+// SyncAll mirrors all repositories from the source platform to every destination.
 func (s *Syncer) SyncAll(ctx context.Context) ([]models.SyncResult, error) {
 	s.logger.Info("starting full sync")
 
@@ -119,6 +127,7 @@ func (s *Syncer) SyncAll(ctx context.Context) ([]models.SyncResult, error) {
 	return results, nil
 }
 
+// SyncOne mirrors a single named repository from the source platform to all destinations.
 func (s *Syncer) SyncOne(ctx context.Context, repoName string) ([]models.SyncResult, error) {
 	srcRepo, err := s.source.GetRepository(ctx, s.sourceUser, repoName)
 	if err != nil {
@@ -269,7 +278,8 @@ func (s *Syncer) syncRepository(ctx context.Context, srcRepo models.Repository, 
 }
 
 func (s *Syncer) pushMirror(repo models.Repository, dest platform.Platform) error {
-	repoPath := git.GetRepoPath(s.tempDir, repo.Name)
+	safeName := filepath.Base(repo.Name)
+	repoPath := git.GetRepoPath(s.tempDir, safeName)
 
 	cloneURL := s.source.CloneURL(repo, s.cfg.Platforms[string(s.source.ID())].Token)
 
@@ -291,10 +301,13 @@ func (s *Syncer) pushMirror(repo models.Repository, dest platform.Platform) erro
 	return nil
 }
 
+// ListRepositories returns all repositories from the source platform.
 func (s *Syncer) ListRepositories(ctx context.Context) ([]models.Repository, error) {
 	return s.source.ListRepositories(ctx)
 }
 
+// ListDiff compares repositories between the source platform and all destinations,
+// reporting missing, extra, or visibility-mismatched repositories.
 func (s *Syncer) ListDiff(ctx context.Context) ([]models.DiffItem, error) {
 	sourceRepos, err := s.source.ListRepositories(ctx)
 	if err != nil {

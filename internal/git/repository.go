@@ -1,3 +1,5 @@
+// Package git provides low-level Git operations (clone, push, ls-remote)
+// using the pure-Go go-git library.
 package git
 
 import (
@@ -13,6 +15,8 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 )
 
+// Clone performs a bare-like clone (NoCheckout) of a remote repository.
+// If the target path already exists, it opens the existing repository instead.
 func Clone(url, path string, token string) (*git.Repository, error) {
 	if err := CleanupRepoPath(path); err != nil {
 		return nil, err
@@ -38,6 +42,8 @@ func Clone(url, path string, token string) (*git.Repository, error) {
 	return r, nil
 }
 
+// Push force-pushes all branches and tags to the specified remote.
+// It creates or updates the remote URL before pushing.
 func Push(repo *git.Repository, remoteName string, pushURL string, token string, force bool) error {
 	if err := SetRemoteURL(repo, remoteName, pushURL, token); err != nil {
 		return fmt.Errorf("set remote URL: %w", err)
@@ -70,6 +76,7 @@ func Push(repo *git.Repository, remoteName string, pushURL string, token string,
 	return nil
 }
 
+// SetRemoteURL creates or updates a remote's URL in the repository config.
 func SetRemoteURL(repo *git.Repository, remoteName, url, token string) error {
 	_, err := repo.Remote(remoteName)
 	if err != nil {
@@ -105,6 +112,7 @@ func SetRemoteURL(repo *git.Repository, remoteName, url, token string) error {
 	return nil
 }
 
+// ListRemote performs a git ls-remote equivalent, returning a map of ref names to commit SHAs.
 func ListRemote(url string, token string) (map[string]string, error) {
 	remote := git.NewRemote(memory.NewStorage(), &config.RemoteConfig{
 		Name: "origin",
@@ -131,6 +139,7 @@ func ListRemote(url string, token string) (map[string]string, error) {
 	return result, nil
 }
 
+// CleanupRepoPath removes any existing directory at repoPath to prepare for a fresh clone.
 func CleanupRepoPath(repoPath string) error {
 	if _, err := os.Stat(repoPath); err == nil {
 		if err := os.RemoveAll(repoPath); err != nil {
@@ -140,6 +149,7 @@ func CleanupRepoPath(repoPath string) error {
 	return nil
 }
 
+// GetRepoPath joins a temporary directory path with a repository name.
 func GetRepoPath(tempDir, repoName string) string {
 	return filepath.Join(tempDir, repoName)
 }

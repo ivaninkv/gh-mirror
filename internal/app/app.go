@@ -1,3 +1,4 @@
+// Package app contains the application-level orchestration logic for CLI commands.
 package app
 
 import (
@@ -13,8 +14,10 @@ import (
 	"gh-mirror/pkg/platform"
 )
 
+// Version is set at build time via ldflags. Defaults to "dev" for local builds.
 var Version = "dev"
 
+// GetEnvOrDefault returns the value of an environment variable, or a default if not set.
 func GetEnvOrDefault(key, defaultVal string, getenv func(string) string) string {
 	if val := getenv(key); val != "" {
 		return val
@@ -22,8 +25,9 @@ func GetEnvOrDefault(key, defaultVal string, getenv func(string) string) string 
 	return defaultVal
 }
 
+// PrintUsage prints the CLI help text.
 func PrintUsage() {
-	fmt.Printf(`GitHub to GitVerse Mirror Tool
+	fmt.Printf(`gh-mirror — Multi-Platform Git Repository Mirroring Tool
 
 Usage:
   mirror <command> [options]
@@ -33,12 +37,18 @@ Commands:
   list                 List all repositories from source platform
   diff                 Show differences between source and first destination
   help                 Show this help message
+  --version, -v        Show version
 
 Configuration:
-  All settings are managed via config.yaml (see config.yaml.example)
+  CONFIG_PATH          Override config file path (env variable)
+  Searched in order:  $CONFIG_PATH → ./config.yaml →
+                       ~/.config/gh-mirror/config.yaml →
+                       /etc/gh-mirror/config.yaml
+  See config.yaml.example for the configuration format.
 `)
 }
 
+// PrintSyncResult prints a single sync operation result to stdout.
 func PrintSyncResult(r *models.SyncResult) {
 	status := "✓"
 	if r.Error != nil {
@@ -49,6 +59,7 @@ func PrintSyncResult(r *models.SyncResult) {
 	}
 }
 
+// PrintVersion prints the application version.
 func PrintVersion() {
 	fmt.Printf("mirror version %s\n", Version)
 }
@@ -78,6 +89,7 @@ func createSourceAndDests(cfg *config.Config) (platform.Platform, []platform.Pla
 	return source, destinations, nil
 }
 
+// RunSync executes the "sync" CLI command.
 func RunSync(args []string, configPath string, logger *slog.Logger) error {
 	cfg, err := config.Load(configPath)
 	if err != nil {
@@ -130,6 +142,7 @@ func RunSync(args []string, configPath string, logger *slog.Logger) error {
 	return nil
 }
 
+// RunList executes the "list" CLI command.
 func RunList(args []string, configPath string, logger *slog.Logger) error {
 	cfg, err := config.Load(configPath)
 	if err != nil {
@@ -173,6 +186,7 @@ func RunList(args []string, configPath string, logger *slog.Logger) error {
 	return nil
 }
 
+// RunDiff executes the "diff" CLI command.
 func RunDiff(args []string, configPath string, logger *slog.Logger) error {
 	cfg, err := config.Load(configPath)
 	if err != nil {

@@ -40,7 +40,7 @@ jobs:
             fi
             
             GOOS=$os GOARCH=$arch CGO_ENABLED=0 go build \
-              -ldflags="-s -w -X main.Version=${{ github.ref_name }}" \
+              -ldflags="-s -w -X gh-mirror/internal/app.Version=${{ github.ref_name }}" \
               -o "$output_dir/$binary_name" \
               ./cmd/mirror
             

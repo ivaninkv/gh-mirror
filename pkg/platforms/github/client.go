@@ -3,13 +3,15 @@ package github
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"net/url"
 	"strings"
 
 	"gh-mirror/pkg/models"
 	"gh-mirror/pkg/platform"
-	"github.com/google/go-github/v67/github"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/google/go-github/v67/github"
 )
 
 const PlatformID = models.PlatformID("github")
@@ -40,7 +42,19 @@ func (c *Client) Configure(token string, apiURL string, webURL string) error {
 	}
 	c.token = token
 	c.webURL = webURL
-	c.client = github.NewTokenClient(context.Background(), token)
+
+	if apiURL == "" {
+		c.client = github.NewTokenClient(context.Background(), token)
+	} else {
+		c.client = github.NewClient(http.DefaultClient).WithAuthToken(token)
+		baseURL := strings.TrimSuffix(apiURL, "/")
+		parsedURL, err := url.Parse(baseURL + "/")
+		if err != nil {
+			return fmt.Errorf("invalid API URL: %w", err)
+		}
+		c.client.BaseURL = parsedURL
+	}
+
 	return nil
 }
 
@@ -147,7 +161,7 @@ func (c *Client) UpdateRepository(ctx context.Context, owner, repo string, priva
 func (c *Client) RepositoryExists(ctx context.Context, owner, repo string) (bool, error) {
 	_, resp, err := c.client.Repositories.Get(ctx, owner, repo)
 	if err != nil {
-		if resp.StatusCode == 404 {
+		if resp != nil && resp.StatusCode == 404 {
 			return false, nil
 		}
 		return false, err
@@ -156,8 +170,7 @@ func (c *Client) RepositoryExists(ctx context.Context, owner, repo string) (bool
 }
 
 func (c *Client) CloneURL(repo models.Repository, token string) string {
-	host := strings.TrimPrefix(c.webURL, "https://")
-	return fmt.Sprintf("https://%s@%s/%s.git", token, host, repo.FullName)
+	return fmt.Sprintf("%s/%s.git", c.webURL, repo.FullName)
 }
 
 func (c *Client) CleanPullRefs(repoPath string) error {

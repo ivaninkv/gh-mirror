@@ -48,8 +48,7 @@ func TestExpandEnvValue(t *testing.T) {
 	for _, tc := range ExpandEnvValueTestCases() {
 		t.Run(tc.Name, func(t *testing.T) {
 			for key, val := range tc.EnvVars {
-				os.Setenv(key, val)
-				defer os.Unsetenv(key)
+				t.Setenv(key, val)
 			}
 
 			got := expandEnvValue(tc.Input)
