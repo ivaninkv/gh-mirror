@@ -8,8 +8,16 @@ import (
 	"testing"
 
 	"github.com/nalgeon/be"
+	"gh-mirror/pkg/apiclient"
 	"gh-mirror/pkg/models"
 )
+
+func newCodebergTestClient(serverURL string) *Client {
+	return &Client{
+		api:    apiclient.New(serverURL, "test-token", apiclient.Config{AuthHeader: "Authorization", AuthPrefix: "token "}),
+		webURL: "https://codeberg.org",
+	}
+}
 
 func TestGetAuthenticatedUser(t *testing.T) {
 	for _, tc := range GetUserTestCases() {
@@ -28,11 +36,7 @@ func TestGetAuthenticatedUser(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := &Client{
-				apiURL:     server.URL,
-				webURL:     "https://codeberg.org",
-				httpClient: &http.Client{},
-			}
+			client := newCodebergTestClient(server.URL)
 
 			user, err := client.GetAuthenticatedUser(context.Background())
 
@@ -63,11 +67,7 @@ func TestListRepositories(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := &Client{
-				apiURL:     server.URL,
-				webURL:     "https://codeberg.org",
-				httpClient: &http.Client{},
-			}
+			client := newCodebergTestClient(server.URL)
 
 			repos, err := client.ListRepositories(context.Background())
 
@@ -98,11 +98,7 @@ func TestGetRepository(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := &Client{
-				apiURL:     server.URL,
-				webURL:     "https://codeberg.org",
-				httpClient: &http.Client{},
-			}
+			client := newCodebergTestClient(server.URL)
 
 			repo, err := client.GetRepository(context.Background(), tc.Owner, tc.Repo)
 
@@ -124,11 +120,7 @@ func TestRepositoryExists(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := &Client{
-				apiURL:     server.URL,
-				webURL:     "https://codeberg.org",
-				httpClient: &http.Client{},
-			}
+			client := newCodebergTestClient(server.URL)
 
 			exists, err := client.RepositoryExists(context.Background(), tc.Owner, tc.Repo)
 
@@ -161,11 +153,7 @@ func TestCreateRepository(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := &Client{
-				apiURL:     server.URL,
-				webURL:     "https://codeberg.org",
-				httpClient: &http.Client{},
-			}
+			client := newCodebergTestClient(server.URL)
 
 			repo, err := client.CreateRepository(context.Background(), "new-repo", false, "A new repo")
 
@@ -187,11 +175,7 @@ func TestUpdateRepository(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := &Client{
-		apiURL:     server.URL,
-		webURL:     "https://codeberg.org",
-		httpClient: &http.Client{},
-	}
+	client := newCodebergTestClient(server.URL)
 
 	err := client.UpdateRepository(context.Background(), "user", "myrepo", true, "Updated description")
 	be.Equal(t, err, nil)
@@ -204,11 +188,7 @@ func TestUpdateRepositoryError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := &Client{
-		apiURL:     server.URL,
-		webURL:     "https://codeberg.org",
-		httpClient: &http.Client{},
-	}
+	client := newCodebergTestClient(server.URL)
 
 	err := client.UpdateRepository(context.Background(), "user", "nonexistent", false, "")
 	be.True(t, err != nil)
@@ -218,7 +198,7 @@ func TestCloneURL(t *testing.T) {
 	client := &Client{webURL: "https://codeberg.org"}
 	repo := models.Repository{FullName: "user/repo"}
 
-	url := client.CloneURL(repo, "token")
+	url := client.CloneURL(repo)
 	be.Equal(t, url, "https://codeberg.org/user/repo.git")
 }
 
@@ -232,7 +212,7 @@ func TestConfigure(t *testing.T) {
 	client := &Client{}
 	err := client.Configure("token", "https://codeberg.org/api/v1", "https://codeberg.org")
 	be.Equal(t, err, nil)
-	be.Equal(t, client.token, "token")
+	be.True(t, client.api != nil)
 }
 
 func TestID(t *testing.T) {
@@ -252,11 +232,7 @@ func BenchmarkGetAuthenticatedUser(b *testing.B) {
 	}))
 	defer server.Close()
 
-	client := &Client{
-		apiURL:     server.URL,
-		webURL:     "https://codeberg.org",
-		httpClient: &http.Client{},
-	}
+	client := newCodebergTestClient(server.URL)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -273,11 +249,7 @@ func BenchmarkListRepositories(b *testing.B) {
 	}))
 	defer server.Close()
 
-	client := &Client{
-		apiURL:     server.URL,
-		webURL:     "https://codeberg.org",
-		httpClient: &http.Client{},
-	}
+	client := newCodebergTestClient(server.URL)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -291,11 +263,7 @@ func BenchmarkRepositoryExists(b *testing.B) {
 	}))
 	defer server.Close()
 
-	client := &Client{
-		apiURL:     server.URL,
-		webURL:     "https://codeberg.org",
-		httpClient: &http.Client{},
-	}
+	client := newCodebergTestClient(server.URL)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

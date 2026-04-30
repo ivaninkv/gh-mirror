@@ -42,17 +42,19 @@ func TestPrintVersion(t *testing.T) {
 	Version = "1.2.3"
 	defer func() { Version = old }()
 
-	result := captureOutput(PrintVersion)
-	be.True(t, strings.Contains(result, "1.2.3"))
+	var buf bytes.Buffer
+	printTo(&buf, func() { PrintVersion() })
+	be.True(t, strings.Contains(buf.String(), "1.2.3"))
 }
 
 func TestPrintUsage(t *testing.T) {
-	result := captureOutput(PrintUsage)
-	be.True(t, strings.Contains(result, "mirror <command>"))
-	be.True(t, strings.Contains(result, "sync"))
-	be.True(t, strings.Contains(result, "list"))
-	be.True(t, strings.Contains(result, "diff"))
-	be.True(t, strings.Contains(result, "help"))
+	var buf bytes.Buffer
+	printTo(&buf, func() { PrintUsage() })
+	be.True(t, strings.Contains(buf.String(), "mirror <command>"))
+	be.True(t, strings.Contains(buf.String(), "sync"))
+	be.True(t, strings.Contains(buf.String(), "list"))
+	be.True(t, strings.Contains(buf.String(), "diff"))
+	be.True(t, strings.Contains(buf.String(), "help"))
 }
 
 func TestPrintSyncResultSuccess(t *testing.T) {
@@ -62,11 +64,12 @@ func TestPrintSyncResultSuccess(t *testing.T) {
 		Action:      models.ActionCreate,
 		Message:     "created successfully",
 	}
-	result := captureOutput(func() { PrintSyncResult(r) })
-	be.True(t, strings.Contains(result, "✓"))
-	be.True(t, strings.Contains(result, "test-repo"))
-	be.True(t, strings.Contains(result, "gitlab"))
-	be.True(t, strings.Contains(result, "created successfully"))
+	var buf bytes.Buffer
+	printTo(&buf, func() { PrintSyncResult(r) })
+	be.True(t, strings.Contains(buf.String(), "✓"))
+	be.True(t, strings.Contains(buf.String(), "test-repo"))
+	be.True(t, strings.Contains(buf.String(), "gitlab"))
+	be.True(t, strings.Contains(buf.String(), "created successfully"))
 }
 
 func TestPrintSyncResultError(t *testing.T) {
@@ -77,10 +80,11 @@ func TestPrintSyncResultError(t *testing.T) {
 		Error:       fmt.Errorf("connection refused"),
 		Message:     "failed to push",
 	}
-	result := captureOutput(func() { PrintSyncResult(r) })
-	be.True(t, strings.Contains(result, "✗"))
-	be.True(t, strings.Contains(result, "failed-repo"))
-	be.True(t, strings.Contains(result, "connection refused"))
+	var buf bytes.Buffer
+	printTo(&buf, func() { PrintSyncResult(r) })
+	be.True(t, strings.Contains(buf.String(), "✗"))
+	be.True(t, strings.Contains(buf.String(), "failed-repo"))
+	be.True(t, strings.Contains(buf.String(), "connection refused"))
 }
 
 func TestPrintSyncResultSkip(t *testing.T) {
@@ -90,10 +94,11 @@ func TestPrintSyncResultSkip(t *testing.T) {
 		Action:      models.ActionSkip,
 		Message:     "already in sync",
 	}
-	result := captureOutput(func() { PrintSyncResult(r) })
-	be.True(t, strings.Contains(result, "✓"))
-	be.True(t, strings.Contains(result, "skip"))
-	be.True(t, strings.Contains(result, "already in sync"))
+	var buf bytes.Buffer
+	printTo(&buf, func() { PrintSyncResult(r) })
+	be.True(t, strings.Contains(buf.String(), "✓"))
+	be.True(t, strings.Contains(buf.String(), "skip"))
+	be.True(t, strings.Contains(buf.String(), "already in sync"))
 }
 
 func TestRunSyncConfigNotFound(t *testing.T) {
@@ -117,14 +122,12 @@ func TestRunDiffConfigNotFound(t *testing.T) {
 	be.True(t, strings.Contains(err.Error(), "load config"))
 }
 
-func captureOutput(fn func()) string {
+func printTo(buf *bytes.Buffer, fn func()) {
 	old := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
 	fn()
 	w.Close()
 	os.Stdout = old
-	var buf bytes.Buffer
-	io.Copy(&buf, r)
-	return buf.String()
+	io.Copy(buf, r)
 }

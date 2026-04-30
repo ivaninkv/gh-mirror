@@ -8,25 +8,34 @@ import (
 	"os"
 	"path/filepath"
 
-	"gh-mirror/internal/config"
 	"gh-mirror/internal/git"
 	"gh-mirror/pkg/models"
 	"gh-mirror/pkg/platform"
 )
+
+// Credential holds the authentication and endpoint details for a single platform.
+type Credential struct {
+	Token  string
+	APIURL string
+	URL    string
+}
+
+// Credentials maps platform IDs to their credentials.
+type Credentials map[models.PlatformID]Credential
 
 // Syncer orchestrates repository mirroring from a source platform to one or more destinations.
 type Syncer struct {
 	source       platform.Platform
 	destinations []platform.Platform
 	destUsers    map[models.PlatformID]string
-	cfg          *config.Config
+	creds        Credentials
 	logger       *slog.Logger
 	tempDir      string
 	sourceUser   string
 }
 
 // NewSyncer creates a new Syncer and initializes its temporary working directory.
-func NewSyncer(source platform.Platform, destinations []platform.Platform, cfg *config.Config, logger *slog.Logger) (*Syncer, error) {
+func NewSyncer(source platform.Platform, destinations []platform.Platform, creds Credentials, logger *slog.Logger) (*Syncer, error) {
 	tempDir, err := os.MkdirTemp("", "gh-mirror-*")
 	if err != nil {
 		return nil, fmt.Errorf("create temp dir: %w", err)
@@ -35,7 +44,7 @@ func NewSyncer(source platform.Platform, destinations []platform.Platform, cfg *
 	return &Syncer{
 		source:       source,
 		destinations: destinations,
-		cfg:          cfg,
+		creds:        creds,
 		logger:       logger,
 		tempDir:      tempDir,
 		destUsers:    make(map[models.PlatformID]string),
@@ -190,7 +199,7 @@ func (s *Syncer) syncRepository(ctx context.Context, srcRepo models.Repository, 
 	if action == models.ActionUpdate {
 		s.logger.Info("checking refs for changes", "name", srcRepo.Name)
 
-		sourceRefs, err := s.getRemoteRefs(srcRepo, s.cfg.Platforms[string(s.source.ID())].Token, s.source)
+		sourceRefs, err := s.getRemoteRefs(srcRepo, s.creds[s.source.ID()].Token, s.source)
 		if err != nil {
 			return models.SyncResult{
 				RepoName:    srcRepo.Name,
@@ -201,7 +210,7 @@ func (s *Syncer) syncRepository(ctx context.Context, srcRepo models.Repository, 
 			}
 		}
 
-		destRefs, err := s.getRemoteRefs(srcRepo, s.cfg.Platforms[string(dest.ID())].Token, dest)
+		destRefs, err := s.getRemoteRefs(srcRepo, s.creds[dest.ID()].Token, dest)
 		if err != nil {
 			return models.SyncResult{
 				RepoName:    srcRepo.Name,
@@ -281,9 +290,9 @@ func (s *Syncer) pushMirror(repo models.Repository, dest platform.Platform) erro
 	safeName := filepath.Base(repo.Name)
 	repoPath := git.GetRepoPath(s.tempDir, safeName)
 
-	cloneURL := s.source.CloneURL(repo, s.cfg.Platforms[string(s.source.ID())].Token)
+	cloneURL := s.source.CloneURL(repo)
 
-	repoHandle, err := git.Clone(cloneURL, repoPath, s.cfg.Platforms[string(s.source.ID())].Token)
+	repoHandle, err := git.Clone(cloneURL, repoPath, s.creds[s.source.ID()].Token)
 	if err != nil {
 		return fmt.Errorf("git clone: %w", err)
 	}
@@ -292,9 +301,9 @@ func (s *Syncer) pushMirror(repo models.Repository, dest platform.Platform) erro
 		return fmt.Errorf("delete pull refs: %w", err)
 	}
 
-	pushURL := dest.CloneURL(repo, s.cfg.Platforms[string(dest.ID())].Token)
+	pushURL := dest.CloneURL(repo)
 
-	if err := git.Push(repoHandle, "origin", pushURL, s.cfg.Platforms[string(dest.ID())].Token, true); err != nil {
+	if err := git.Push(repoHandle, "origin", pushURL, s.creds[dest.ID()].Token, true); err != nil {
 		return fmt.Errorf("git push mirror: %w", err)
 	}
 
@@ -379,7 +388,7 @@ func (s *Syncer) ListDiff(ctx context.Context) ([]models.DiffItem, error) {
 }
 
 func (s *Syncer) getRemoteRefs(repo models.Repository, token string, p platform.Platform) (map[string]string, error) {
-	cloneURL := p.CloneURL(repo, token)
+	cloneURL := p.CloneURL(repo)
 
 	refs, err := git.ListRemote(cloneURL, token)
 	if err != nil {
@@ -390,10 +399,6 @@ func (s *Syncer) getRemoteRefs(repo models.Repository, token string, p platform.
 }
 
 func compareRefs(sourceRefs, destRefs map[string]string) (bool, string) {
-	if len(sourceRefs) != len(destRefs) {
-		return false, fmt.Sprintf("ref count mismatch: source=%d, dest=%d", len(sourceRefs), len(destRefs))
-	}
-
 	for ref, sourceSHA := range sourceRefs {
 		destSHA, exists := destRefs[ref]
 		if !exists {

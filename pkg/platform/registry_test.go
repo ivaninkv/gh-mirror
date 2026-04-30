@@ -22,7 +22,7 @@ func (t *testPlatform) GetRepository(ctx context.Context, owner string, repo str
 func (t *testPlatform) CreateRepository(ctx context.Context, name string, private bool, description string) (*models.Repository, error) { return nil, nil }
 func (t *testPlatform) UpdateRepository(ctx context.Context, owner string, repo string, private bool, description string) error { return nil }
 func (t *testPlatform) RepositoryExists(ctx context.Context, owner string, repo string) (bool, error) { return false, nil }
-func (t *testPlatform) CloneURL(repo models.Repository, token string) string                     { return "" }
+func (t *testPlatform) CloneURL(repo models.Repository) string                     { return "" }
 func (t *testPlatform) CleanPullRefs(repoPath string) error                                        { return nil }
 
 func TestCreateNonexistent(t *testing.T) {

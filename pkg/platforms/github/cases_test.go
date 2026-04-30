@@ -4,7 +4,6 @@ type GHCloneURLTestCase struct {
 	Name     string
 	WebURL   string
 	FullName string
-	Token    string
 	WantURL  string
 }
 
@@ -14,14 +13,12 @@ func GHCloneURLTestCases() []GHCloneURLTestCase {
 			Name:     "github.com clone URL",
 			WebURL:   "https://github.com",
 			FullName: "user/repo",
-			Token:    "ghp_token",
 			WantURL:  "https://github.com/user/repo.git",
 		},
 		{
 			Name:     "custom github enterprise clone URL",
 			WebURL:   "https://github.mycompany.com",
 			FullName: "user/repo",
-			Token:    "token",
 			WantURL:  "https://github.mycompany.com/user/repo.git",
 		},
 	}

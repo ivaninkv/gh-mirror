@@ -8,8 +8,16 @@ import (
 	"testing"
 
 	"github.com/nalgeon/be"
+	"gh-mirror/pkg/apiclient"
 	"gh-mirror/pkg/models"
 )
+
+func newTestClient(serverURL string) *Client {
+	return &Client{
+		api:    apiclient.New(serverURL, "test-token", apiclient.Config{AuthHeader: "PRIVATE-TOKEN", AuthPrefix: ""}),
+		webURL: "https://gitlab.com",
+	}
+}
 
 func TestGetAuthenticatedUser(t *testing.T) {
 	for _, tc := range GetAuthenticatedUserTestCases() {
@@ -30,11 +38,7 @@ func TestGetAuthenticatedUser(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := &Client{
-				apiURL:     server.URL,
-				webURL:     "https://gitlab.com",
-				httpClient: &http.Client{},
-			}
+			client := newTestClient(server.URL)
 
 			user, err := client.GetAuthenticatedUser(context.Background())
 			be.Equal(t, receivedPath, "/user")
@@ -68,11 +72,7 @@ func TestListRepositories(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := &Client{
-				apiURL:     server.URL,
-				webURL:     "https://gitlab.com",
-				httpClient: &http.Client{},
-			}
+			client := newTestClient(server.URL)
 
 			repos, err := client.ListRepositories(context.Background())
 			be.True(t, len(receivedPath) > 0)
@@ -106,11 +106,7 @@ func TestGetRepository(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := &Client{
-				apiURL:     server.URL,
-				webURL:     "https://gitlab.com",
-				httpClient: &http.Client{},
-			}
+			client := newTestClient(server.URL)
 
 			repo, err := client.GetRepository(context.Background(), tc.Owner, tc.Repo)
 			be.True(t, len(receivedPath) > 0)
@@ -135,11 +131,7 @@ func TestRepositoryExists(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := &Client{
-				apiURL:     server.URL,
-				webURL:     "https://gitlab.com",
-				httpClient: &http.Client{},
-			}
+			client := newTestClient(server.URL)
 
 			exists, err := client.RepositoryExists(context.Background(), tc.Owner, tc.Repo)
 			be.True(t, len(receivedPath) > 0)
@@ -173,11 +165,7 @@ func TestCreateRepository(t *testing.T) {
 			}))
 			defer server.Close()
 
-			client := &Client{
-				apiURL:     server.URL,
-				webURL:     "https://gitlab.com",
-				httpClient: &http.Client{},
-			}
+			client := newTestClient(server.URL)
 
 			repo, err := client.CreateRepository(context.Background(), "new-repo", false, "A new repo")
 
@@ -199,11 +187,7 @@ func TestUpdateRepository(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := &Client{
-		apiURL:     server.URL,
-		webURL:     "https://gitlab.com",
-		httpClient: &http.Client{},
-	}
+	client := newTestClient(server.URL)
 
 	err := client.UpdateRepository(context.Background(), "user", "myrepo", true, "Updated description")
 	be.Equal(t, err, nil)
@@ -216,11 +200,7 @@ func TestUpdateRepositoryError(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := &Client{
-		apiURL:     server.URL,
-		webURL:     "https://gitlab.com",
-		httpClient: &http.Client{},
-	}
+	client := newTestClient(server.URL)
 
 	err := client.UpdateRepository(context.Background(), "user", "nonexistent", false, "")
 	be.True(t, err != nil)
@@ -230,7 +210,7 @@ func TestCloneURL(t *testing.T) {
 	client := &Client{webURL: "https://gitlab.com"}
 	repo := models.Repository{FullName: "user/repo"}
 
-	url := client.CloneURL(repo, "token")
+	url := client.CloneURL(repo)
 	be.Equal(t, url, "https://gitlab.com/user/repo.git")
 }
 
@@ -244,8 +224,7 @@ func TestConfigure(t *testing.T) {
 	client := &Client{}
 	err := client.Configure("token", "https://gitlab.com/api/v4", "https://gitlab.com")
 	be.Equal(t, err, nil)
-	be.Equal(t, client.token, "token")
-	be.Equal(t, client.apiURL, "https://gitlab.com/api/v4")
+	be.True(t, client.api != nil)
 }
 
 func TestID(t *testing.T) {
@@ -265,11 +244,7 @@ func BenchmarkGetAuthenticatedUser(b *testing.B) {
 	}))
 	defer server.Close()
 
-	client := &Client{
-		apiURL:     server.URL,
-		webURL:     "https://gitlab.com",
-		httpClient: &http.Client{},
-	}
+	client := newTestClient(server.URL)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -286,11 +261,7 @@ func BenchmarkListRepositories(b *testing.B) {
 	}))
 	defer server.Close()
 
-	client := &Client{
-		apiURL:     server.URL,
-		webURL:     "https://gitlab.com",
-		httpClient: &http.Client{},
-	}
+	client := newTestClient(server.URL)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
@@ -304,11 +275,7 @@ func BenchmarkRepositoryExists(b *testing.B) {
 	}))
 	defer server.Close()
 
-	client := &Client{
-		apiURL:     server.URL,
-		webURL:     "https://gitlab.com",
-		httpClient: &http.Client{},
-	}
+	client := newTestClient(server.URL)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

@@ -89,6 +89,18 @@ func createSourceAndDests(cfg *config.Config) (platform.Platform, []platform.Pla
 	return source, destinations, nil
 }
 
+func buildCredentials(cfg *config.Config) sync.Credentials {
+	creds := make(sync.Credentials)
+	for name, pc := range cfg.Platforms {
+		creds[models.PlatformID(name)] = sync.Credential{
+			Token:  pc.Token,
+			APIURL: pc.APIURL,
+			URL:    pc.URL,
+		}
+	}
+	return creds
+}
+
 // RunSync executes the "sync" CLI command.
 func RunSync(args []string, configPath string, logger *slog.Logger) error {
 	cfg, err := config.Load(configPath)
@@ -104,7 +116,7 @@ func RunSync(args []string, configPath string, logger *slog.Logger) error {
 		return err
 	}
 
-	syncer, err := sync.NewSyncer(source, destinations, cfg, logger)
+	syncer, err := sync.NewSyncer(source, destinations, buildCredentials(cfg), logger)
 	if err != nil {
 		return fmt.Errorf("create syncer: %w", err)
 	}
@@ -157,7 +169,7 @@ func RunList(args []string, configPath string, logger *slog.Logger) error {
 		return err
 	}
 
-	syncer, err := sync.NewSyncer(source, destinations, cfg, logger)
+	syncer, err := sync.NewSyncer(source, destinations, buildCredentials(cfg), logger)
 	if err != nil {
 		return fmt.Errorf("create syncer: %w", err)
 	}
@@ -201,7 +213,7 @@ func RunDiff(args []string, configPath string, logger *slog.Logger) error {
 		return err
 	}
 
-	syncer, err := sync.NewSyncer(source, destinations, cfg, logger)
+	syncer, err := sync.NewSyncer(source, destinations, buildCredentials(cfg), logger)
 	if err != nil {
 		return fmt.Errorf("create syncer: %w", err)
 	}

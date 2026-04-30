@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"regexp"
 
@@ -36,7 +37,11 @@ var envVarPattern = regexp.MustCompile(`\$\{([^}]+)\}`)
 func expandEnvValue(value string) string {
 	return envVarPattern.ReplaceAllStringFunc(value, func(match string) string {
 		envName := match[2 : len(match)-1]
-		return os.Getenv(envName)
+		envVal := os.Getenv(envName)
+		if envVal == "" {
+			slog.Warn("environment variable is empty or not set", "var", envName)
+		}
+		return envVal
 	})
 }
 

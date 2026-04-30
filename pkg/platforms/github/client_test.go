@@ -225,7 +225,7 @@ func TestCloneURL(t *testing.T) {
 			client := &Client{webURL: tc.WebURL}
 			repo := models.Repository{FullName: tc.FullName}
 
-			url := client.CloneURL(repo, tc.Token)
+			url := client.CloneURL(repo)
 			be.Equal(t, url, tc.WantURL)
 		})
 	}
@@ -350,10 +350,9 @@ func newClientWithServer(server *httptest.Server) *Client {
 func BenchmarkCloneURL(b *testing.B) {
 	client := &Client{webURL: "https://github.com"}
 	repo := models.Repository{FullName: "user/repo"}
-	token := "ghp_test_token"
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		_ = client.CloneURL(repo, token)
+		_ = client.CloneURL(repo)
 	}
 }
 

@@ -21,9 +21,8 @@ type Platform interface {
 	RepositoryExists(ctx context.Context, owner, repo string) (bool, error)
 
 	// CloneURL builds a clone/push URL for the given repository.
-	// The token parameter is passed for platforms that embed credentials in the URL;
-	// authentication via http.BasicAuth is preferred.
-	CloneURL(repo models.Repository, token string) string
+	// Authentication is handled separately via http.BasicAuth.
+	CloneURL(repo models.Repository) string
 
 	// CleanPullRefs removes pull-request references (refs/pull/*) from a cloned
 	// repository before pushing, as they are platform-specific and should not be

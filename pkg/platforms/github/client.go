@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"gh-mirror/pkg/models"
 	"gh-mirror/pkg/platform"
@@ -43,10 +44,12 @@ func (c *Client) Configure(token string, apiURL string, webURL string) error {
 	c.token = token
 	c.webURL = webURL
 
+	httpClient := &http.Client{Timeout: 60 * time.Second}
+
 	if apiURL == "" {
-		c.client = github.NewTokenClient(context.Background(), token)
+		c.client = github.NewClient(httpClient).WithAuthToken(token)
 	} else {
-		c.client = github.NewClient(http.DefaultClient).WithAuthToken(token)
+		c.client = github.NewClient(httpClient).WithAuthToken(token)
 		baseURL := strings.TrimSuffix(apiURL, "/")
 		parsedURL, err := url.Parse(baseURL + "/")
 		if err != nil {
@@ -169,7 +172,7 @@ func (c *Client) RepositoryExists(ctx context.Context, owner, repo string) (bool
 	return true, nil
 }
 
-func (c *Client) CloneURL(repo models.Repository, token string) string {
+func (c *Client) CloneURL(repo models.Repository) string {
 	return fmt.Sprintf("%s/%s.git", c.webURL, repo.FullName)
 }
 

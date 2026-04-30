@@ -7,7 +7,6 @@ import (
 
 	"github.com/nalgeon/be"
 
-	"gh-mirror/internal/config"
 	"gh-mirror/pkg/models"
 	"gh-mirror/pkg/platform"
 )
@@ -22,7 +21,7 @@ type MockPlatform struct {
 	createRepoFunc       func(ctx context.Context, name string, private bool, description string) (*models.Repository, error)
 	updateRepoFunc       func(ctx context.Context, owner, repo string, private bool, description string) error
 	repoExistsFunc       func(ctx context.Context, owner, repo string) (bool, error)
-	cloneURLFunc         func(repo models.Repository, token string) string
+	cloneURLFunc         func(repo models.Repository) string
 	cleanPullRefsFunc    func(repoPath string) error
 }
 
@@ -45,7 +44,7 @@ func (m *MockPlatform) UpdateRepository(ctx context.Context, owner, repo string,
 func (m *MockPlatform) RepositoryExists(ctx context.Context, owner, repo string) (bool, error) {
 	return m.repoExistsFunc(ctx, owner, repo)
 }
-func (m *MockPlatform) CloneURL(repo models.Repository, token string) string     { return m.cloneURLFunc(repo, token) }
+func (m *MockPlatform) CloneURL(repo models.Repository) string     { return m.cloneURLFunc(repo) }
 func (m *MockPlatform) CleanPullRefs(repoPath string) error                       { return m.cleanPullRefsFunc(repoPath) }
 
 func newSourceMock() *MockPlatform {
@@ -59,7 +58,7 @@ func newSourceMock() *MockPlatform {
 		createRepoFunc:    func(_ context.Context, _ string, _ bool, _ string) (*models.Repository, error) { return nil, nil },
 		updateRepoFunc:    func(_ context.Context, _, _ string, _ bool, _ string) error { return nil },
 		repoExistsFunc:    func(_ context.Context, _, _ string) (bool, error) { return false, nil },
-		cloneURLFunc:      func(_ models.Repository, _ string) string { return "https://github.com/user/repo.git" },
+		cloneURLFunc:      func(_ models.Repository) string { return "https://github.com/user/repo.git" },
 		cleanPullRefsFunc: func(_ string) error { return nil },
 	}
 }
@@ -75,27 +74,22 @@ func newDestMock(id models.PlatformID) *MockPlatform {
 		createRepoFunc:    func(_ context.Context, _ string, _ bool, _ string) (*models.Repository, error) { return nil, nil },
 		updateRepoFunc:    func(_ context.Context, _, _ string, _ bool, _ string) error { return nil },
 		repoExistsFunc:    func(_ context.Context, _, _ string) (bool, error) { return false, nil },
-		cloneURLFunc:      func(_ models.Repository, _ string) string { return "https://example.com/user/repo.git" },
+		cloneURLFunc:      func(_ models.Repository) string { return "https://example.com/user/repo.git" },
 		cleanPullRefsFunc: func(_ string) error { return nil },
 	}
 }
 
-func testConfig() *config.Config {
-	return &config.Config{
-		Source: "github",
-		Platforms: map[string]config.PlatformConfig{
-			"github": {Token: "ghp_test", URL: "https://github.com"},
-			"gitlab": {Token: "glpat_test", URL: "https://gitlab.com"},
-		},
-		Destinations: []string{"gitlab"},
-		Sync:         config.SyncConfig{TimeoutMinutes: 30},
+func testCredentials() Credentials {
+	return Credentials{
+		models.PlatformID("github"): {Token: "ghp_test", URL: "https://github.com"},
+		models.PlatformID("gitlab"): {Token: "glpat_test", URL: "https://gitlab.com"},
 	}
 }
 
 func TestNewSyncer(t *testing.T) {
 	src := newSourceMock()
 	dests := []platform.Platform{newDestMock("gitlab")}
-	cfg := testConfig()
+	cfg := testCredentials()
 	logger := slog.Default()
 
 	s, err := NewSyncer(src, dests, cfg, logger)
@@ -110,7 +104,7 @@ func TestNewSyncer(t *testing.T) {
 func TestNewSyncerCreatesTempDir(t *testing.T) {
 	src := newSourceMock()
 	dests := []platform.Platform{newDestMock("gitlab")}
-	cfg := testConfig()
+	cfg := testCredentials()
 	logger := slog.Default()
 
 	s, err := NewSyncer(src, dests, cfg, logger)
@@ -124,7 +118,7 @@ func TestNewSyncerCreatesTempDir(t *testing.T) {
 func TestCloseRemovesTempDir(t *testing.T) {
 	src := newSourceMock()
 	dests := []platform.Platform{newDestMock("gitlab")}
-	cfg := testConfig()
+	cfg := testCredentials()
 	logger := slog.Default()
 
 	s, err := NewSyncer(src, dests, cfg, logger)
@@ -141,7 +135,7 @@ func TestInit(t *testing.T) {
 	src := newSourceMock()
 	dest := newDestMock("gitlab")
 	dests := []platform.Platform{dest}
-	cfg := testConfig()
+	cfg := testCredentials()
 	logger := slog.Default()
 
 	s, err := NewSyncer(src, dests, cfg, logger)
@@ -160,7 +154,7 @@ func TestInitSourceAuthFails(t *testing.T) {
 		return "", platform.ErrNotAuthenticated
 	}
 	dests := []platform.Platform{newDestMock("gitlab")}
-	cfg := testConfig()
+	cfg := testCredentials()
 	logger := slog.Default()
 
 	s, err := NewSyncer(src, dests, cfg, logger)
@@ -178,7 +172,7 @@ func TestInitDestAuthFails(t *testing.T) {
 		return "", platform.ErrNotAuthenticated
 	}
 	dests := []platform.Platform{dest}
-	cfg := testConfig()
+	cfg := testCredentials()
 	logger := slog.Default()
 
 	s, err := NewSyncer(src, dests, cfg, logger)
@@ -195,7 +189,7 @@ func TestDestinationIDs(t *testing.T) {
 	codebergDest := newDestMock("codeberg")
 	dests := []platform.Platform{gitlabDest, codebergDest}
 
-	s, err := NewSyncer(src, dests, testConfig(), slog.Default())
+	s, err := NewSyncer(src, dests, testCredentials(), slog.Default())
 	be.True(t, err == nil)
 	defer s.Close()
 
@@ -219,7 +213,7 @@ func TestListDiffMissingOnDest(t *testing.T) {
 		return []models.Repository{}, nil
 	}
 
-	s, err := NewSyncer(src, []platform.Platform{dest}, testConfig(), slog.Default())
+	s, err := NewSyncer(src, []platform.Platform{dest}, testCredentials(), slog.Default())
 	be.True(t, err == nil)
 	defer s.Close()
 
@@ -250,7 +244,7 @@ func TestListDiffOnlyOnDest(t *testing.T) {
 		}, nil
 	}
 
-	s, err := NewSyncer(src, []platform.Platform{dest}, testConfig(), slog.Default())
+	s, err := NewSyncer(src, []platform.Platform{dest}, testCredentials(), slog.Default())
 	be.True(t, err == nil)
 	defer s.Close()
 
@@ -277,7 +271,7 @@ func TestListDiffVisibilityMismatch(t *testing.T) {
 		}, nil
 	}
 
-	s, err := NewSyncer(src, []platform.Platform{dest}, testConfig(), slog.Default())
+	s, err := NewSyncer(src, []platform.Platform{dest}, testCredentials(), slog.Default())
 	be.True(t, err == nil)
 	defer s.Close()
 
@@ -304,7 +298,7 @@ func TestListDiffInSync(t *testing.T) {
 		}, nil
 	}
 
-	s, err := NewSyncer(src, []platform.Platform{dest}, testConfig(), slog.Default())
+	s, err := NewSyncer(src, []platform.Platform{dest}, testCredentials(), slog.Default())
 	be.True(t, err == nil)
 	defer s.Close()
 
@@ -319,7 +313,7 @@ func TestListDiffNoDestinations(t *testing.T) {
 		return []models.Repository{{Name: "repo1"}}, nil
 	}
 
-	s, err := NewSyncer(src, []platform.Platform{}, testConfig(), slog.Default())
+	s, err := NewSyncer(src, []platform.Platform{}, testCredentials(), slog.Default())
 	be.True(t, err == nil)
 	defer s.Close()
 
@@ -334,7 +328,7 @@ func TestListDiffSourceError(t *testing.T) {
 		return nil, platform.ErrNotAuthenticated
 	}
 
-	s, err := NewSyncer(src, []platform.Platform{newDestMock("gitlab")}, testConfig(), slog.Default())
+	s, err := NewSyncer(src, []platform.Platform{newDestMock("gitlab")}, testCredentials(), slog.Default())
 	be.True(t, err == nil)
 	defer s.Close()
 
@@ -353,7 +347,7 @@ func TestListDiffDestError(t *testing.T) {
 		return nil, platform.ErrNotAuthenticated
 	}
 
-	s, err := NewSyncer(src, []platform.Platform{dest}, testConfig(), slog.Default())
+	s, err := NewSyncer(src, []platform.Platform{dest}, testCredentials(), slog.Default())
 	be.True(t, err == nil)
 	defer s.Close()
 
@@ -367,7 +361,7 @@ func TestSyncAllSourceListError(t *testing.T) {
 		return nil, platform.ErrNotAuthenticated
 	}
 
-	s, err := NewSyncer(src, []platform.Platform{newDestMock("gitlab")}, testConfig(), slog.Default())
+	s, err := NewSyncer(src, []platform.Platform{newDestMock("gitlab")}, testCredentials(), slog.Default())
 	be.True(t, err == nil)
 	defer s.Close()
 
@@ -386,7 +380,7 @@ func TestSyncAllDestListError(t *testing.T) {
 		return nil, platform.ErrNotAuthenticated
 	}
 
-	s, err := NewSyncer(src, []platform.Platform{dest}, testConfig(), slog.Default())
+	s, err := NewSyncer(src, []platform.Platform{dest}, testCredentials(), slog.Default())
 	be.True(t, err == nil)
 	defer s.Close()
 
@@ -404,7 +398,7 @@ func TestListRepositories(t *testing.T) {
 		return expectedRepos, nil
 	}
 
-	s, err := NewSyncer(src, []platform.Platform{newDestMock("gitlab")}, testConfig(), slog.Default())
+	s, err := NewSyncer(src, []platform.Platform{newDestMock("gitlab")}, testCredentials(), slog.Default())
 	be.True(t, err == nil)
 	defer s.Close()
 
@@ -421,7 +415,7 @@ func TestListRepositoriesError(t *testing.T) {
 		return nil, platform.ErrNotAuthenticated
 	}
 
-	s, err := NewSyncer(src, []platform.Platform{newDestMock("gitlab")}, testConfig(), slog.Default())
+	s, err := NewSyncer(src, []platform.Platform{newDestMock("gitlab")}, testCredentials(), slog.Default())
 	be.True(t, err == nil)
 	defer s.Close()
 
@@ -442,7 +436,7 @@ func TestSyncOneRepoExistsError(t *testing.T) {
 		return false, platform.ErrNotAuthenticated
 	}
 
-	s, err := NewSyncer(src, []platform.Platform{dest}, testConfig(), slog.Default())
+	s, err := NewSyncer(src, []platform.Platform{dest}, testCredentials(), slog.Default())
 	be.True(t, err == nil)
 	defer s.Close()
 
@@ -463,7 +457,7 @@ func TestSyncOneGetRepoError(t *testing.T) {
 		return nil, platform.ErrRepositoryNotFound
 	}
 
-	s, err := NewSyncer(src, []platform.Platform{newDestMock("gitlab")}, testConfig(), slog.Default())
+	s, err := NewSyncer(src, []platform.Platform{newDestMock("gitlab")}, testCredentials(), slog.Default())
 	be.True(t, err == nil)
 	defer s.Close()
 
@@ -485,7 +479,7 @@ func TestSyncAllWithRepos(t *testing.T) {
 		return []models.Repository{}, nil
 	}
 
-	s, err := NewSyncer(src, []platform.Platform{dest}, testConfig(), slog.Default())
+	s, err := NewSyncer(src, []platform.Platform{dest}, testCredentials(), slog.Default())
 	be.True(t, err == nil)
 	defer s.Close()
 

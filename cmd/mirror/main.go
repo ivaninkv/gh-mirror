@@ -72,7 +72,7 @@ func resolveConfigPath() string {
 
 	paths := []string{
 		"config.yaml",
-		filepath.Join(os.Getenv("HOME"), ".config", "gh-mirror", "config.yaml"),
+		filepath.Join(homeDir(), ".config", "gh-mirror", "config.yaml"),
 		"/etc/gh-mirror/config.yaml",
 	}
 
@@ -83,4 +83,11 @@ func resolveConfigPath() string {
 	}
 
 	return "config.yaml"
+}
+
+func homeDir() string {
+	if dir, err := os.UserHomeDir(); err == nil {
+		return dir
+	}
+	return os.Getenv("HOME")
 }
